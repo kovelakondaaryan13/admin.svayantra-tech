@@ -1,0 +1,28 @@
+import type { NextRequest } from "next/server";
+import { requireUser } from "@/lib/auth";
+import { ok, handleError } from "@/lib/http";
+import { EmployeeCreateSchema } from "@/lib/schemas/admin";
+import { employeeService } from "@/services/employee-service";
+
+export const runtime = "nodejs";
+
+/** Employee directory (requires `users.read`). */
+export async function GET() {
+  try {
+    const user = await requireUser();
+    return ok(await employeeService.list(user));
+  } catch (err) {
+    return handleError(err);
+  }
+}
+
+/** Create an employee — provisions an account + directory record (requires `users.edit`). */
+export async function POST(req: NextRequest) {
+  try {
+    const user = await requireUser();
+    const input = EmployeeCreateSchema.parse(await req.json());
+    return ok(await employeeService.create(user, input), 201);
+  } catch (err) {
+    return handleError(err);
+  }
+}
