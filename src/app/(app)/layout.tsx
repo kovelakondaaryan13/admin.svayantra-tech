@@ -13,10 +13,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect("/sign-in");
   const workspace = await activeWorkspace();
 
-  // Founder-first, persona-aware IA. Only 6 destinations; everything else is
+  // Founder-first, persona-aware IA. A handful of destinations; everything else is
   // reached through the Assistant or contextual navigation. Nav is gated by
   // permission (UX only — every route also enforces authorization server-side).
-  const items: NavItem[] = [{ href: "/home", label: "Home", icon: "🏠" }, { href: "/assistant", label: "Assistant", icon: "🤖" }];
+  const items: NavItem[] = [
+    { href: "/home", label: "Home", icon: "🏠" },
+    { href: "/assistant", label: "Assistant", icon: "🤖" },
+    { href: "/calendar", label: "Calendar", icon: "📅" },
+  ];
   if (user.isOwner) items.push({ href: "/command", label: "Command", icon: "🎯" });
   if (can(user, "crm.read")) items.push({ href: "/work", label: "Work", icon: "💼" });
   if (can(user, "crm.read")) items.push({ href: "/companies", label: "Companies", icon: "🏢" });

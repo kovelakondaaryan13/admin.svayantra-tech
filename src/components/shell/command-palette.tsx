@@ -56,6 +56,7 @@ export function CommandPalette({ isOwner }: { isOwner: boolean }) {
       nav("home", "Home", "/home", "🏠"),
       ...(isOwner ? [nav("command", "Command Center", "/command", "🎯")] : []),
       nav("assistant", "Assistant", "/assistant", "🤖"),
+      nav("calendar", "Calendar", "/calendar", "📅"),
       nav("work", "Work — Leads", "/work", "💼"),
       nav("tasks", "Work — Tasks", "/work/tasks", "✅"),
       nav("conveyor", "Work — Conveyor", "/work/conveyor", "🏭"),

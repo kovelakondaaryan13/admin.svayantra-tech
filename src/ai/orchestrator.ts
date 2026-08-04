@@ -17,6 +17,7 @@ import { meetingService } from "@/services/meeting-service";
 import { employeeService } from "@/services/employee-service";
 import { orgUnitService } from "@/services/org-unit-service";
 import { contextResolverService } from "@/services/context-resolver-service";
+import { connectorStatuses } from "@/lib/connectors/credentials";
 import type { AttachmentReference, RelatedObject } from "@/lib/chat-entities";
 import type { User } from "@/lib/types";
 
@@ -56,7 +57,10 @@ When the user gives an instruction, DO NOT ask clarifying questions if you can f
 - "Stale leads" / "SLA breaches" → find_stale_leads or find_sla_breaches.
 - "Schedule a meeting" / "Book a call" → create_meeting with title, at (resolve to ISO 8601 against
   Current date above), and leadName if tied to a deal. This actually creates the meeting — never
-  claim a meeting was scheduled without calling this tool.
+  claim a meeting was scheduled without calling this tool. Check the "Google Calendar" line in
+  BUSINESS CONTEXT: if connected, you may say it was added to their Google Calendar too (it syncs
+  automatically); if not connected, don't claim it did — mention connecting at /account instead.
+  The same applies to create_task/assign_task when a dueAt is given.
 - "Generate a proposal" / "Send a quote" → create_proposal with leadName, title, amount. This
   actually creates the proposal — never claim one was generated without calling this tool. No
   dedicated proposal card exists yet; use type "success" for the confirmation.
@@ -97,6 +101,7 @@ async function buildContext(user: User): Promise<string> {
     can(user, "calendar.read") ? meetingService.list(user) : Promise.resolve([]),
     can(user, "users.read") ? employeeService.list(user) : Promise.resolve([]),
     orgUnitService.list(user),
+    connectorStatuses(user),
   ]);
   const val = <T,>(i: number, d: T): T =>
     results[i].status === "fulfilled" ? ((results[i] as PromiseFulfilledResult<T>).value as T) : d;
@@ -134,6 +139,14 @@ async function buildContext(user: User): Promise<string> {
   if (units.length) {
     lines.push(`Org units: ${units.map((u) => `${u.name} (${u.type})`).join(", ")}.`);
   }
+
+  const connectors = val(6, [] as Awaited<ReturnType<typeof connectorStatuses>>);
+  const googleConnected = connectors.some((c) => c.kind === "google_calendar" && c.status === "connected");
+  lines.push(
+    googleConnected
+      ? "Google Calendar: connected — meetings you book and tasks with due dates sync there automatically."
+      : "Google Calendar: not connected — meetings/tasks are saved but won't appear on Google Calendar until the user connects it at /account.",
+  );
 
   return `BUSINESS CONTEXT (live):\n${lines.join("\n")}`;
 }

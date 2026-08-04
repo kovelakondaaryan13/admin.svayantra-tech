@@ -54,6 +54,8 @@ export interface Task extends BaseDoc {
   comments?: TaskComment[];
   dependsOn?: string[]; // task ids that must finish first
   recurrence?: TaskRecurrence;
+  /** Set once best-effort-synced to the assignee's connected Google Calendar. */
+  googleEventId?: string;
 }
 
 export interface Meeting extends BaseDoc {

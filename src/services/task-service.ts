@@ -4,6 +4,8 @@ import * as audit from "@/lib/audit";
 import { activityService } from "@/services/activity-service";
 import { notificationService } from "@/services/notification-service";
 import { employeeService } from "@/services/employee-service";
+import { calendarService } from "@/services/calendar-service";
+import { connectorStatuses } from "@/lib/connectors/credentials";
 import { can, isOwner } from "@/lib/iam";
 import { NotFound, Forbidden } from "@/lib/errors";
 import type { Task, TaskComment, DTO } from "@/lib/entities";
@@ -41,6 +43,22 @@ async function notify(orgId: string, userId: string, actorId: string, message: s
   }
 }
 
+const TASK_BLOCK_MINUTES = 30;
+
+/**
+ * Minimal actor for calendar operations scoped to a specific user id — a task's
+ * assignee may not be the caller (e.g. assign_task), and the credential/calendar
+ * lookups underneath only ever need id + orgId, never role/permissions.
+ */
+function calendarActor(userId: string, orgId: string): User {
+  return { id: userId, email: "", role: "sales_rep", orgId, permissions: [], isOwner: false };
+}
+
+async function hasGoogleCalendar(userId: string, orgId: string): Promise<boolean> {
+  const statuses = await connectorStatuses(calendarActor(userId, orgId));
+  return statuses.some((s) => s.kind === "google_calendar" && s.status === "connected");
+}
+
 export const taskService = {
   async create(user: User, input: CreateInput, viaAi = false): Promise<DTO<Task>> {
     const assigneeId = input.assigneeId ?? user.id;
@@ -61,6 +79,21 @@ export const taskService = {
     await audit.record({ actor: user, action: "task.create", entity: id, viaAi });
     await activityService.log(user, "task", id, "created", `Task "${input.title}"`, viaAi);
     await notify(user.orgId, assigneeId, user.id, `You were assigned a task: "${input.title}"`);
+
+    // Best-effort Google Calendar sync onto the ASSIGNEE's calendar — never blocks or
+    // fails task creation.
+    if (doc.dueAt && (await hasGoogleCalendar(assigneeId, user.orgId))) {
+      try {
+        const end = new Date(doc.dueAt.getTime() + TASK_BLOCK_MINUTES * 60_000);
+        const event = await calendarService.create(calendarActor(assigneeId, user.orgId), {
+          title: `Task: ${doc.title}`,
+          description: doc.leadId ? `Linked to lead ${doc.leadId}. Created by STOS.` : "Created by STOS.",
+          start: doc.dueAt.toISOString(),
+          end: end.toISOString(),
+        });
+        await tasks.update(user.orgId, id, { googleEventId: event.id });
+      } catch { /* calendar sync is best-effort; the task itself is already saved */ }
+    }
     return toDTO(doc);
   },
 
@@ -194,12 +227,56 @@ export const taskService = {
         recurrence: before.recurrence,
       });
     }
+
+    // Google Calendar sync — remove the event if it's no longer needed (done, or the
+    // due date was cleared) or the assignee changed (stale on the old assignee's
+    // calendar either way); (re)create/update on the current assignee's calendar if
+    // the task is still open with a due date. All best-effort.
+    let googleEventId = before.googleEventId ?? "";
+    const assigneeChanged = input.assigneeId !== undefined && input.assigneeId !== before.assigneeId;
+    if (googleEventId && (assigneeChanged || doc.status !== "open" || !doc.dueAt)) {
+      if (await hasGoogleCalendar(before.assigneeId, user.orgId)) {
+        try {
+          await calendarService.remove(calendarActor(before.assigneeId, user.orgId), googleEventId);
+        } catch { /* best-effort */ }
+      }
+      googleEventId = "";
+    }
+    if (doc.status === "open" && doc.dueAt && (await hasGoogleCalendar(doc.assigneeId, user.orgId))) {
+      try {
+        const end = new Date(doc.dueAt.getTime() + TASK_BLOCK_MINUTES * 60_000);
+        if (googleEventId) {
+          await calendarService.update(calendarActor(doc.assigneeId, user.orgId), googleEventId, {
+            title: `Task: ${doc.title}`,
+            start: doc.dueAt.toISOString(),
+            end: end.toISOString(),
+          });
+        } else {
+          const event = await calendarService.create(calendarActor(doc.assigneeId, user.orgId), {
+            title: `Task: ${doc.title}`,
+            description: doc.leadId ? `Linked to lead ${doc.leadId}. Created by STOS.` : "Created by STOS.",
+            start: doc.dueAt.toISOString(),
+            end: end.toISOString(),
+          });
+          googleEventId = event.id;
+        }
+      } catch { /* best-effort */ }
+    }
+    if (googleEventId !== (before.googleEventId ?? "")) {
+      await tasks.update(user.orgId, id, { googleEventId });
+    }
+
     return toDTO(doc);
   },
   async remove(user: User, id: string): Promise<void> {
     const existing = await tasks.findById(user.orgId, id);
     if (!existing) throw new NotFound("task not found");
     await assertTaskAccess(user, existing);
+    if (existing.googleEventId && (await hasGoogleCalendar(existing.assigneeId, user.orgId))) {
+      try {
+        await calendarService.remove(calendarActor(existing.assigneeId, user.orgId), existing.googleEventId);
+      } catch { /* best-effort */ }
+    }
     if (!(await tasks.softDelete(user.orgId, id))) throw new NotFound("task not found");
     await audit.record({ actor: user, action: "task.delete", entity: id });
   },
