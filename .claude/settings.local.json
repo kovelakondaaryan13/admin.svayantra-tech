@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git credential-manager *)",
+      "Bash(echo \"erase exit: $?\")",
+      "Bash(env)"
     ]
   }
 }

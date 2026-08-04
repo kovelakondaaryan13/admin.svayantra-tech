@@ -31,6 +31,8 @@ export interface Employee extends BaseDoc {
   userId: string; // Better Auth user id
   name: string;
   email: string;
+  /** Personal/recovery email (distinct from the company login email above). Self-editable. */
+  personalEmail?: string;
   roleKey: string; // system role key or custom role key
   title?: string; // job title (distinct from role)
   departmentId?: string;

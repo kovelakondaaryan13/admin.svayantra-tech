@@ -21,10 +21,14 @@ export function ConnectorsPanel({
   items,
   connected,
   error,
+  canManageGoogle = false,
+  canTestGoogle = false,
 }: {
   items: ConnectorItem[];
   connected?: string;
   error?: string;
+  canManageGoogle?: boolean;
+  canTestGoogle?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -107,18 +111,26 @@ export function ConnectorsPanel({
                       {c.kind === "google_calendar" ? (
                         c.connected ? (
                           <>
-                            <button onClick={() => test(c.kind)} disabled={busy === c.kind} className="btn-ghost text-xs">
-                              {busy === c.kind ? "Testing…" : "Test"}
-                            </button>
-                            <a href="/api/connectors/google/oauth/start" className="btn-ghost text-xs">Reconnect</a>
-                            <button onClick={disconnectGoogle} disabled={busy === c.kind} className="btn-ghost text-xs">
-                              Disconnect
-                            </button>
+                            {canTestGoogle && (
+                              <button onClick={() => test(c.kind)} disabled={busy === c.kind} className="btn-ghost text-xs">
+                                {busy === c.kind ? "Testing…" : "Test"}
+                              </button>
+                            )}
+                            {canManageGoogle && (
+                              <>
+                                <a href="/api/connectors/google/oauth/start" className="btn-ghost text-xs">Reconnect</a>
+                                <button onClick={disconnectGoogle} disabled={busy === c.kind} className="btn-ghost text-xs">
+                                  Disconnect
+                                </button>
+                              </>
+                            )}
                           </>
-                        ) : c.availability === "configured" ? (
+                        ) : c.availability !== "configured" ? (
+                          <span className="text-xs text-muted">Set GOOGLE_CLIENT_ID to enable</span>
+                        ) : canManageGoogle ? (
                           <a href="/api/connectors/google/oauth/start" className="btn-accent">Connect</a>
                         ) : (
-                          <span className="text-xs text-muted">Set GOOGLE_CLIENT_ID to enable</span>
+                          <span className="text-xs text-muted">Ask your admin to grant calendar access to connect this.</span>
                         )
                       ) : (
                         <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">

@@ -9,12 +9,13 @@ import { db } from "@/lib/mongo";
 import { repo, toDTO } from "@/data/collection";
 import * as audit from "@/lib/audit";
 import { assertPermission, isOwner } from "@/lib/iam";
+import { env } from "@/lib/env";
 import { NotFound, BusinessRule, Forbidden } from "@/lib/errors";
 import type { Employee } from "@/lib/org-entities";
 import type { DTO } from "@/lib/entities";
 import type { User } from "@/lib/types";
 import type { z } from "zod";
-import type { EmployeeCreateSchema } from "@/lib/schemas/admin";
+import type { EmployeeCreateSchema, SelfProfileUpdateSchema } from "@/lib/schemas/admin";
 
 /** A shareable temporary password for a freshly-provisioned account. */
 function tempPassword(): string {
@@ -36,6 +37,20 @@ function assertCanAssignRole(actor: User, roleKey: string): void {
   }
   if (roleKey === "super_admin" || roleKey === "admin") {
     assertPermission(actor, "roles.manage");
+  }
+}
+
+/**
+ * The one master/founder account (OWNER_EMAIL) is off-limits to everyone but itself —
+ * even another owner cannot change its role or otherwise edit it. Multiple owners can
+ * exist (e.g. a co-founder), but only the master account can touch the master account.
+ * No-op if OWNER_EMAIL isn't configured.
+ */
+function assertNotProtectedOwner(actor: User, target: Employee): void {
+  const protectedEmail = env.OWNER_EMAIL();
+  if (!protectedEmail) return;
+  if (target.email === protectedEmail && actor.email !== protectedEmail) {
+    throw new Forbidden("this account is protected and can only be changed by signing in as it");
   }
 }
 
@@ -182,6 +197,7 @@ export const employeeService = {
     if (patch.roleKey) assertCanAssignRole(user, patch.roleKey);
     const before = await employees.findById(user.orgId, id);
     if (!before) throw new NotFound("employee not found");
+    assertNotProtectedOwner(user, before);
     const updated = await employees.update(user.orgId, id, patch);
     // Role changes are high-signal — record them explicitly and immutably.
     if (patch.roleKey && patch.roleKey !== before.roleKey) {
@@ -194,6 +210,28 @@ export const employeeService = {
     } else {
       await audit.record({ actor: user, action: "employee.update", entity: id });
     }
+    return toDTO(updated!);
+  },
+
+  /** The caller's own directory record — no users.read needed, everyone can see their own profile. */
+  async getSelf(user: User): Promise<DTO<Employee>> {
+    const c = await coll();
+    const doc = await c.findOne({ userId: user.id, orgId: user.orgId, deletedAt: { $exists: false } });
+    if (!doc) throw new NotFound("employee not found");
+    return toDTO(doc);
+  },
+
+  /**
+   * Self-service profile edit — name/personal email/phone only, always scoped to the
+   * caller's OWN record (found by userId, never a passed-in id), so it needs no
+   * users.edit permission and can never touch anyone else's record.
+   */
+  async updateSelf(user: User, patch: z.infer<typeof SelfProfileUpdateSchema>): Promise<DTO<Employee>> {
+    const c = await coll();
+    const before = await c.findOne({ userId: user.id, orgId: user.orgId, deletedAt: { $exists: false } });
+    if (!before) throw new NotFound("employee not found");
+    const updated = await employees.update(user.orgId, before._id.toHexString(), patch);
+    await audit.record({ actor: user, action: "employee.update_self", entity: before._id.toHexString() });
     return toDTO(updated!);
   },
 };

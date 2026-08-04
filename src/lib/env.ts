@@ -48,4 +48,9 @@ export const env = {
 
   // DNS override (see lib/database/dns.ts).
   DNS_SERVERS: () => optional("DNS_SERVERS"),
+
+  // The one master/founder account — set once via `npm run bootstrap-owner`. Used to
+  // protect that specific account from being role-changed or removed by anyone else,
+  // even another owner. See employee-service.ts's assertNotProtectedOwner().
+  OWNER_EMAIL: () => optional("OWNER_EMAIL"),
 };

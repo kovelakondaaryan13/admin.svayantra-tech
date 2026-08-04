@@ -12,7 +12,10 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const user = await requireUser();
-    assertCan(user, "connector:manage");
+    // Personal connection (credential is scoped to this user), not an org-wide integration
+    // setting — gate on calendar:write (same permission the sync feature itself requires),
+    // not connector:manage (admin-only), or non-admin reps could never connect their own calendar.
+    assertCan(user, "calendar:write");
     if (!googleOAuth.isConfigured()) {
       throw new BusinessRule("Google connector not configured (set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)");
     }

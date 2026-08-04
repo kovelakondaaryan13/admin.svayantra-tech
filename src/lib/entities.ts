@@ -63,6 +63,8 @@ export interface Meeting extends BaseDoc {
   leadId?: string;
   contactId?: string;
   notes?: string;
+  /** Set once best-effort-synced to the owner's connected Google Calendar. */
+  googleEventId?: string;
 }
 
 /** Append-only activity timeline entry. */

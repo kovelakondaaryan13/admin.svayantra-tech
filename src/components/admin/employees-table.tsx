@@ -9,6 +9,7 @@ interface Row {
   id: string;
   name: string;
   email: string;
+  personalEmail?: string;
   roleKey: string;
   status: string;
   title?: string;
@@ -107,6 +108,7 @@ export function EmployeesTable({
                       <div className="min-w-0">
                         <Link href={`/people/${e.id}`} className="text-fg hover:text-accent">{e.name}</Link>
                         <div className="text-xs text-muted">{e.title ? `${e.title} · ` : ""}{e.email}</div>
+                        {e.personalEmail && <div className="text-[11px] text-faint">{e.personalEmail}</div>}
                         {e.kpis && e.kpis.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {e.kpis.map((k) => (

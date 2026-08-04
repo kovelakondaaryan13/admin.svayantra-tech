@@ -1,9 +1,15 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/auth";
+import { can } from "@/lib/iam";
+import { employeeService } from "@/services/employee-service";
+import { connectorStatuses } from "@/lib/connectors/credentials";
 import { PageHeader, Section, Avatar } from "@/components/ds";
 import { AccountForm } from "./account-form";
+import { ProfileForm } from "./profile-form";
+import { GoogleCalendarCard } from "./google-calendar-card";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const ROLE_LABEL: Record<string, string> = {
   owner: "Founder",
@@ -26,19 +32,37 @@ export default async function AccountPage() {
   const user = await getUser();
   if (!user) redirect("/sign-in");
 
+  const [profile, statuses] = await Promise.all([
+    employeeService.getSelf(user).catch(() => null),
+    connectorStatuses(user).catch(() => []),
+  ]);
+  const google = statuses.find((s) => s.kind === "google_calendar");
+
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <PageHeader eyebrow="Account" title="Your account" subtitle="Manage your sign-in details." />
 
       <Section title="Profile">
-        <div className="flex items-center gap-3">
+        <div className="mb-4 flex items-center gap-3">
           <Avatar name={user.name ?? user.email} size="lg" />
           <div>
             <div className="text-sm font-medium text-fg">{user.name ?? user.email}</div>
-            <div className="text-xs text-muted">{user.email}</div>
+            <div className="text-xs text-muted">{user.email} (login)</div>
             <div className="mt-0.5 text-xs text-muted">{ROLE_LABEL[user.role] ?? user.role}</div>
           </div>
         </div>
+        {profile && (
+          <ProfileForm name={profile.name} personalEmail={profile.personalEmail} phone={profile.phone} />
+        )}
+      </Section>
+
+      <Section title="Google Calendar">
+        <GoogleCalendarCard
+          connected={google?.status === "connected"}
+          accountEmail={google?.accountEmail ?? null}
+          canConnect={can(user, "calendar.write")}
+          canTest={can(user, "integrations.read")}
+        />
       </Section>
 
       <Section title="Change password">

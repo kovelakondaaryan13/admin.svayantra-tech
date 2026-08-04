@@ -39,6 +39,13 @@ export const EmployeeCreateSchema = z.object({
   defaultExecutionModel: z.enum(["individual", "conveyor"]).optional(),
 });
 
+/** Self-service profile edit (any authenticated employee, on their own record only). */
+export const SelfProfileUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  personalEmail: z.string().email().max(200).or(z.literal("")).optional(),
+  phone: z.string().max(40).or(z.literal("")).optional(),
+});
+
 export const OverridesSchema = z.object({
   grants: z.array(z.string().max(60)).max(64).default([]),
   denies: z.array(z.string().max(60)).max(64).default([]),

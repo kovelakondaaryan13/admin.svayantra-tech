@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { can } from "@/lib/iam";
 import { connectorRegistry } from "@/lib/connectors/registry";
 import { connectorStatuses } from "@/lib/connectors/credentials";
 import { ConnectorsPanel } from "@/components/connectors/panel";
@@ -30,5 +31,13 @@ export default async function ConnectorsPage({
     };
   });
 
-  return <ConnectorsPanel items={items} connected={sp.connected} error={sp.error} />;
+  return (
+    <ConnectorsPanel
+      items={items}
+      connected={sp.connected}
+      error={sp.error}
+      canManageGoogle={can(user, "calendar.write")}
+      canTestGoogle={can(user, "integrations.read")}
+    />
+  );
 }

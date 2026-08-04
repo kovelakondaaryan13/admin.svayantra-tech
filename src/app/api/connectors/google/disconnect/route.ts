@@ -8,7 +8,8 @@ export const runtime = "nodejs";
 export async function POST() {
   try {
     const user = await requireUser();
-    assertCan(user, "connector:manage");
+    // Same reasoning as oauth/start: this disconnects the caller's OWN credential.
+    assertCan(user, "calendar:write");
     await disconnect(user, "google_calendar");
     return ok({ disconnected: true });
   } catch (err) {

@@ -27,6 +27,7 @@ export default async function PeoplePage() {
           id: e.id,
           name: e.name,
           email: e.email,
+          personalEmail: e.personalEmail,
           roleKey: e.roleKey,
           status: e.status,
           title: e.title,
