@@ -25,6 +25,7 @@ export const auth = betterAuth({
   database: mongodbAdapter(getClientSync().db(env.MONGODB_DB())),
   secret: env.BETTER_AUTH_SECRET(),
   baseURL: env.BETTER_AUTH_URL(),
+  trustedOrigins: env.TRUSTED_ORIGINS(),
   emailAndPassword: { enabled: true },
   user: {
     additionalFields: {

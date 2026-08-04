@@ -53,4 +53,13 @@ export const env = {
   // protect that specific account from being role-changed or removed by anyone else,
   // even another owner. See employee-service.ts's assertNotProtectedOwner().
   OWNER_EMAIL: () => optional("OWNER_EMAIL"),
+
+  // Extra origins Better Auth should trust beyond BETTER_AUTH_URL (comma-separated),
+  // e.g. a production domain fronting the same deploy, or Vercel preview URLs.
+  // BETTER_AUTH_URL itself must still match whatever origin most traffic comes from.
+  TRUSTED_ORIGINS: () =>
+    (process.env.TRUSTED_ORIGINS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
 };
