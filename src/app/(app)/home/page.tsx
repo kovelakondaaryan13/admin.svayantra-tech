@@ -12,6 +12,8 @@ import { employeeService } from "@/services/employee-service";
 import nextDynamic from "next/dynamic";
 import { commandCenterService } from "@/services/command-center-service";
 import { fmtINR as inr } from "@/lib/format";
+import { EmptyState } from "@/components/ds";
+import { MyTasks, type MyTaskRow } from "@/components/home/my-tasks";
 
 const Dashboard = nextDynamic(() => import("@/components/home/dashboard").then(m => m.Dashboard));
 const ExecutiveDashboard = nextDynamic(() => import("@/components/home/executive-dashboard").then(m => m.ExecutiveDashboard));
@@ -38,13 +40,13 @@ export default async function HomePage() {
   // Single parallel fetch — executives get CC (which covers metrics/activity/tasks/employees internally),
   // non-executives get each service individually. No waterfall, no duplicate queries.
   const [tasks, instances, meetings, activity, finance, metrics, employees, cc] = await Promise.all([
-    !exec && (can(user, "tasks.assign") || can(user, "crm.read")) ? taskService.listOpenForUser(user) : Promise.resolve([]),
+    can(user, "tasks.assign") || can(user, "crm.read") ? taskService.listOpenForUser(user) : Promise.resolve([]),
     can(user, "workflows.approve") ? workflowService.listInstances(user) : Promise.resolve([]),
     can(user, "calendar.read") ? meetingService.list(user) : Promise.resolve([]),
     !exec ? activityService.recent(user, 6) : Promise.resolve([]),
     !exec && can(user, "finance.read") ? financeService.summary(user).catch(() => null) : Promise.resolve(null),
     !exec && can(user, "crm.read") ? metricsService.summary(user).catch(() => null) : Promise.resolve(null),
-    !exec && showLeaderboard ? employeeService.list(user).catch(() => []) : Promise.resolve([]),
+    showLeaderboard ? employeeService.list(user).catch(() => []) : Promise.resolve([]),
     exec ? commandCenterService.summary(user).catch(() => null) : Promise.resolve(null),
   ]);
   const nameByOwner: Record<string, string> = {};
@@ -69,6 +71,24 @@ export default async function HomePage() {
     tone: (a.kind === "won" ? "won" : a.kind === "lost" ? "lost" : "note") as "won" | "lost" | "note",
   }));
 
+  // "What should I do today?" — bucketed + formatted on the SERVER (see fmtClock note above).
+  const myTasks: MyTaskRow[] = tasks.map((t): MyTaskRow => {
+    const dueMs = t.dueAt ? new Date(t.dueAt).getTime() : null;
+    const overdue = dueMs !== null && dueMs < now;
+    const dueToday = dueMs !== null && dueMs >= now && dueMs <= todayEnd.getTime();
+    const bucket: MyTaskRow["bucket"] = overdue ? "overdue" : dueToday ? "today" : t.priority === "high" ? "highPriority" : "upcoming";
+    const dueLabel = overdue ? "Overdue" : dueMs !== null ? (dueToday ? `Today, ${fmtClock(new Date(t.dueAt!))}` : new Date(t.dueAt!).toLocaleDateString()) : undefined;
+    return {
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+      dueLabel,
+      bucket,
+      assignedByName: t.createdById && t.createdById !== user.id ? nameByOwner[t.createdById] : undefined,
+      leadId: t.leadId,
+    };
+  });
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="flex items-start justify-between gap-4">
@@ -89,7 +109,7 @@ export default async function HomePage() {
       <AskBar />
 
       {exec && cc ? (
-        <ExecutiveDashboard cc={cc} meetingsToday={meetingsToday} overnight={overnight} />
+        <ExecutiveDashboard cc={cc} meetingsToday={meetingsToday} overnight={overnight} myTasks={myTasks} />
       ) : (
       <>
       {/* Revenue — only for finance-visible personas */}
@@ -110,22 +130,27 @@ export default async function HomePage() {
         </section>
       )}
 
-      {metrics && metrics.totalLeads > 0 && (
-        <Dashboard
-          metrics={metrics}
-          nameByOwner={nameByOwner}
-          showValues={showValues}
-          showLeaderboard={showLeaderboard}
-        />
+      {metrics && (
+        metrics.totalLeads > 0 ? (
+          <Dashboard
+            metrics={metrics}
+            nameByOwner={nameByOwner}
+            showValues={showValues}
+            showLeaderboard={showLeaderboard}
+          />
+        ) : (
+          <EmptyState
+            icon="📈"
+            title="No pipeline data yet"
+            description="Analytics populate once leads start moving through the pipeline — add your first lead to see stage breakdown, source mix, and trends."
+            action={<Link href="/work" className="btn-ghost text-xs">Go to Work →</Link>}
+          />
+        )
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Briefing title="Today's priorities" href="/work" empty="You're all caught up — nothing pressing.">
-          {tasks.slice(0, 5).map((t) => (
-            <Row key={t.id} main={t.title} sub={t.priority ?? "task"} />
-          ))}
-        </Briefing>
+      <MyTasks tasks={myTasks} />
 
+      <div className="grid gap-4 md:grid-cols-2">
         {pending.length > 0 && (
           <Briefing title="Waiting on your approval" href="/workspace" empty="">
             {pending.map((i) => (

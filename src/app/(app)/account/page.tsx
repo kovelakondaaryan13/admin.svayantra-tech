@@ -3,10 +3,12 @@ import { getUser } from "@/lib/auth";
 import { can } from "@/lib/iam";
 import { employeeService } from "@/services/employee-service";
 import { connectorStatuses } from "@/lib/connectors/credentials";
+import { issueService } from "@/services/issue-service";
 import { PageHeader, Section, Avatar } from "@/components/ds";
 import { AccountForm } from "./account-form";
 import { ProfileForm } from "./profile-form";
 import { GoogleCalendarCard } from "./google-calendar-card";
+import { RaiseIssue, type IssueRow } from "./raise-issue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,11 +34,22 @@ export default async function AccountPage() {
   const user = await getUser();
   if (!user) redirect("/sign-in");
 
-  const [profile, statuses] = await Promise.all([
+  const [profile, statuses, issues] = await Promise.all([
     employeeService.getSelf(user).catch(() => null),
     connectorStatuses(user).catch(() => []),
+    issueService.list(user).catch(() => []),
   ]);
   const google = statuses.find((s) => s.kind === "google_calendar");
+  const issueRows: IssueRow[] = issues
+    .filter((i) => i.reporterId === user.id)
+    .map((i) => ({
+      id: i.id,
+      title: i.title,
+      status: i.status,
+      aiResponse: i.aiResponse,
+      aiResolved: i.aiResolved,
+      createdAt: new Date(i.createdAt).toISOString(),
+    }));
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -67,6 +80,10 @@ export default async function AccountPage() {
 
       <Section title="Change password">
         <AccountForm />
+      </Section>
+
+      <Section title="Support">
+        <RaiseIssue initial={issueRows} />
       </Section>
     </div>
   );

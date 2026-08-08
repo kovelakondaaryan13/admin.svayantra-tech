@@ -17,7 +17,9 @@
  */
 import dns from "node:dns";
 import dnsPromises from "node:dns/promises";
+import { logger } from "@/lib/logger";
 
+const log = logger("database");
 let logged = false;
 
 export function configureDns(): void {
@@ -37,7 +39,7 @@ export function configureDns(): void {
   dnsPromises.setServers(servers);
 
   if (!logged) {
-    console.log(`[database] DNS resolvers (callback + promise) configured → ${servers.join(", ")}`);
+    log.info("DNS resolvers (callback + promise) configured", { servers });
     logged = true;
   }
 }

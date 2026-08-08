@@ -28,13 +28,19 @@ export const meetingService = {
       ownerId: user.id,
       leadId: input.leadId,
       contactId: input.contactId,
+      companyId: input.companyId,
       notes: input.notes,
+      transcript: input.transcript,
+      summary: input.summary,
+      attendees: input.attendees,
+      actionItems: input.actionItems,
     });
     const id = doc._id.toHexString();
     await audit.record({ actor: user, action: "meeting.create", entity: id });
     await activityService.log(user, "meeting", id, "created", `Meeting "${input.title}"`);
 
     // Best-effort Google Calendar sync — never blocks or fails meeting creation.
+    // Also requests a Google Meet link (conferenceDataVersion=1 under the hood).
     if (await hasGoogleCalendar(user)) {
       try {
         const end = new Date(doc.at.getTime() + MEETING_BLOCK_MINUTES * 60_000);
@@ -43,11 +49,14 @@ export const meetingService = {
           description: doc.notes,
           start: doc.at.toISOString(),
           end: end.toISOString(),
+          requestConference: true,
         });
-        await meetings.update(user.orgId, id, { googleEventId: event.id });
+        const patch: Partial<Meeting> = { googleEventId: event.id };
+        if (event.conferenceUrl) { patch.videoUrl = event.conferenceUrl; patch.videoProvider = "google_meet"; }
+        await meetings.update(user.orgId, id, patch);
       } catch { /* calendar sync is best-effort; the meeting itself is already saved */ }
     }
-    return toDTO(doc);
+    return toDTO((await meetings.findById(user.orgId, id)) ?? doc);
   },
   async list(user: User): Promise<DTO<Meeting>[]> {
     return (await meetings.list(user.orgId)).map(toDTO);

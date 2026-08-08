@@ -64,14 +64,22 @@ export interface Meeting extends BaseDoc {
   ownerId: string;
   leadId?: string;
   contactId?: string;
+  companyId?: string; // links a meeting to a company even before/without a deal
   notes?: string;
+  videoUrl?: string; // join link, e.g. Google Meet
+  videoProvider?: "google_meet";
+  /** Populated by a future transcription/notes integration — optional today. */
+  transcript?: string;
+  summary?: string;
+  attendees?: string[];
+  actionItems?: string[];
   /** Set once best-effort-synced to the owner's connected Google Calendar. */
   googleEventId?: string;
 }
 
 /** Append-only activity timeline entry. */
 export interface Activity extends BaseDoc {
-  entityType: "lead" | "company" | "contact" | "task" | "meeting" | "proposal" | "quotation" | "document" | "employee" | "workflow";
+  entityType: "lead" | "company" | "contact" | "task" | "meeting" | "proposal" | "quotation" | "document" | "employee" | "workflow" | "conveyor_team" | "issue";
   entityId: string;
   kind: string; // e.g. "created", "stage_changed", "note"
   summary: string;
@@ -84,6 +92,21 @@ export interface Notification extends BaseDoc {
   message: string;
   read: boolean;
   link?: string;
+}
+
+export type IssueStatus = "open" | "investigating" | "resolved" | "closed";
+
+/** A "Raise Issue" report from the profile page. The AI attempts to resolve it first
+ *  (see ai/classify-issue.ts); if it can't, the issue is auto-assigned to the Owner. */
+export interface Issue extends BaseDoc {
+  title: string;
+  description: string;
+  reporterId: string;
+  status: IssueStatus;
+  assigneeId?: string;
+  aiResponse?: string; // the AI's attempted answer, shown to the reporter immediately
+  aiResolved: boolean; // true when the AI's own answer closed it without a human
+  resolvedAt?: Date;
 }
 
 export type ProposalStatus = "draft" | "pending_approval" | "approved" | "sent";

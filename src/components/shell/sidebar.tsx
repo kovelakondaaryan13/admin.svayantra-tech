@@ -45,7 +45,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-overlay/5 bg-overlay/[0.02] px-3 py-5 backdrop-blur-xl md:flex">
+    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-overlay/5 bg-overlay/[0.02] px-3 py-5 backdrop-blur-xl md:flex">
       <div className="mb-8 flex items-center gap-2 px-2">
         <Logo />
         {workspace === "demo" && (

@@ -5,7 +5,7 @@ import { uploadService } from "@/services/upload-service";
 import { conversationService } from "@/services/conversation-service";
 import { activityService } from "@/services/activity-service";
 import { fmtDate } from "@/lib/format";
-import { Section, Timeline, Badge, AICallout, EmptyState, type TimelineItem, type BadgeVariant } from "@/components/ds";
+import { Section, Badge, AICallout, EmptyState, type TimelineItem, type BadgeVariant } from "@/components/ds";
 import { ActivityFilter } from "@/components/context/activity-filter";
 import type { RelatedObjectType } from "@/lib/chat-entities";
 

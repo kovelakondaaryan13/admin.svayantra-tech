@@ -1,17 +1,11 @@
 import type { NextRequest } from "next/server";
-import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { ok, handleError } from "@/lib/http";
 import { conveyorTeamService } from "@/services/conveyor-team-service";
+import { ConveyorTeamUpdateSchema as UpdateSchema } from "@/lib/schemas/platform";
 
 export const runtime = "nodejs";
 type Params = { params: Promise<{ id: string }> };
-
-const UpdateSchema = z.object({
-  name: z.string().min(1).max(120).optional(),
-  memberUserIds: z.array(z.string().max(64)).max(50).optional(),
-  playbookKey: z.string().max(60).optional(),
-});
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   try {

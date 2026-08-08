@@ -7,19 +7,22 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { CommandCenter } from "@/services/command-center-service";
-import { Section, KpiRow, StatTile, AICallout, AIInsight, Timeline, BarChart, BarChartH, type TimelineItem, type BarDatum, Markdown } from "@/components/ds";
-import { fmtLakhCr as money } from "@/lib/format";
+import { Section, KpiRow, StatTile, AICallout, AIInsight, Timeline, BarChart, BarChartH, EmptyState, type TimelineItem, type BarDatum, Markdown } from "@/components/ds";
+import { fmtLakhCr as money, monthLabel as MONTH_LABEL } from "@/lib/format";
+import { MyTasks, type MyTaskRow } from "@/components/home/my-tasks";
 
 export function ExecutiveDashboard({
   cc,
   meetingsToday,
   overnight,
+  myTasks,
 }: {
   cc: CommandCenter;
   // Times are formatted on the SERVER and passed as strings — never format dates in this client
   // component, or SSR/CSR (locale + timezone) will disagree and hydration breaks.
   meetingsToday: { title: string; time: string }[];
   overnight: { summary: string; time: string; tone: "won" | "lost" | "note" }[];
+  myTasks: MyTaskRow[];
 }) {
   const [brief, setBrief] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -103,14 +106,56 @@ export function ExecutiveDashboard({
             <Section title="Workload by team member" action={<span className="t-micro">who needs help</span>}>
               <BarChartH data={cc.utilization.slice(0, 8).map(u => ({
                 label: u.name.split(' ')[0],
-                value: u.openCount,
-                display: `${u.openCount}${u.capacity ? '/' + u.capacity : ''}`,
+                value: u.score,
+                display: `${u.score} / 100`,
                 tone: u.overloaded ? 'bad' as const : undefined,
               }))} />
             </Section>
           )}
         </div>
       )}
+
+      {/* Zone 2b-2 — Pipeline Analytics */}
+      <Section title="Pipeline analytics" variant="plain">
+        {!cc.hasPipelineData ? (
+          <EmptyState
+            icon="📈"
+            title="No pipeline data yet"
+            description="Analytics populate once leads start moving through the pipeline — add your first lead to see revenue trend, win rate, and conversion."
+            action={<Link href="/work" className="btn-ghost text-xs">Go to Work →</Link>}
+          />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Section title="Monthly revenue trend" action={<span className="t-micro">won deals, last 6 months</span>}>
+              <BarChart data={cc.revenueTrendByMonth.map((r): BarDatum => ({
+                label: MONTH_LABEL(r.month),
+                value: r.wonMinor,
+                display: money(r.wonMinor),
+              }))} />
+            </Section>
+            <Section title="Monthly win rate" action={<span className="t-micro">won / (won + lost)</span>}>
+              <BarChart data={cc.winRateByMonth.map((r): BarDatum => ({
+                label: MONTH_LABEL(r.month),
+                value: r.winRatePct ?? 0,
+                display: r.winRatePct == null ? "—" : `${r.winRatePct}%`,
+              }))} />
+            </Section>
+            <Section title="Lead source" action={<span className="t-micro">where deals originate</span>}>
+              <BarChartH data={cc.bySource.slice(0, 8).map((s): BarDatum => ({ label: s.source, value: s.count, display: String(s.count) }))} />
+            </Section>
+            <Section title="Stage conversion funnel" action={<span className="t-micro">% carrying to the next stage</span>}>
+              <BarChartH data={cc.funnel.map((f): BarDatum => ({
+                label: f.stage,
+                value: f.count,
+                display: f.conversionFromPrevPct == null ? `${f.count}` : `${f.count} (${f.conversionFromPrevPct}%)`,
+              }))} />
+            </Section>
+          </div>
+        )}
+        {cc.hasPipelineData && cc.avgSalesCycleDays != null && (
+          <p className="mt-3 t-micro">Average sales cycle: <span className="text-fg">{cc.avgSalesCycleDays} days</span> (won deals, created → closed).</p>
+        )}
+      </Section>
 
       {/* Zone 2c — At-risk deals insight */}
       {cc.atRisk.length > 0 && (
@@ -138,6 +183,8 @@ export function ExecutiveDashboard({
           {schedule.length === 0 ? <p className="px-1 py-2 text-sm text-muted">No meetings today.</p> : <Timeline items={schedule} compact />}
         </Section>
       </div>
+
+      <MyTasks tasks={myTasks} />
 
       {/* Zone 5 — What happened */}
       <Section title={`What happened · ${cc.yesterday.total} in 48h`}>

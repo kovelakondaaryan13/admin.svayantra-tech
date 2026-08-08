@@ -6,6 +6,7 @@ export const LeadCreateSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email().optional(),
   company: z.string().max(200).optional(),
+  companyId: z.string().max(64).optional(),
   source: z.enum(LEAD_SOURCES as [string, ...string[]]).optional(),
   campaign: z.string().max(200).optional(),
   value: z
@@ -19,7 +20,6 @@ export const LeadCreateSchema = z.object({
 export type LeadCreateInput = z.infer<typeof LeadCreateSchema>;
 
 export const LeadUpdateSchema = LeadCreateSchema.partial().extend({
-  companyId: z.string().max(64).optional(),
   score: z.number().int().min(0).max(100).optional(),
   intentScore: z.number().int().min(0).max(100).optional(),
   health: z.enum(["green", "yellow", "red"]).optional(),

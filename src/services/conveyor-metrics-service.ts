@@ -9,10 +9,10 @@
  */
 import { leadService } from "@/services/lead-service";
 import { conveyorTeamService } from "@/services/conveyor-team-service";
-import { LEAD_STAGES } from "@/lib/types";
+import { LEAD_STAGES, OPEN_LEAD_STAGES } from "@/lib/types";
 import type { User } from "@/lib/types";
 
-const OPEN_STAGES = ["new", "qualified", "meeting", "proposal", "negotiation"];
+const OPEN_STAGES: string[] = OPEN_LEAD_STAGES;
 const HOUR = 3600_000;
 const DAY = 86_400_000;
 
@@ -49,6 +49,29 @@ function ms(d: Date | string | undefined): number | null {
   if (!d) return null;
   const t = new Date(d).getTime();
   return Number.isNaN(t) ? null : t;
+}
+
+/**
+ * Per-owner SLA compliance across their active, deadlined conveyor leads — same deadline
+ * logic as the team rollup below, just grouped by current owner instead of by team. Used
+ * by the employee scoring composite (`lib/employee-score.ts`) so "SLA compliance" means
+ * the same thing whether you're looking at a team or a person.
+ */
+export function slaComplianceByOwner(leads: { executionModel?: string; ownerId?: string; stage: string; stageDeadline?: string | Date }[]): Record<string, number | null> {
+  const now = Date.now();
+  const counts = new Map<string, { deadlined: number; withinSla: number }>();
+  for (const l of leads) {
+    if (l.executionModel !== "conveyor" || !l.ownerId || !OPEN_STAGES.includes(l.stage)) continue;
+    const deadline = ms(l.stageDeadline);
+    if (deadline === null) continue;
+    const row = counts.get(l.ownerId) ?? { deadlined: 0, withinSla: 0 };
+    row.deadlined += 1;
+    if (deadline >= now) row.withinSla += 1;
+    counts.set(l.ownerId, row);
+  }
+  const out: Record<string, number | null> = {};
+  for (const [userId, c] of counts) out[userId] = c.deadlined > 0 ? Math.round((c.withinSla / c.deadlined) * 100) : null;
+  return out;
 }
 
 export const conveyorMetricsService = {

@@ -42,7 +42,12 @@ export const MeetingCreateSchema = z.object({
   at: z.string().datetime(),
   leadId: z.string().max(64).optional(),
   contactId: z.string().max(64).optional(),
+  companyId: z.string().max(64).optional(),
   notes: z.string().max(5000).optional(),
+  transcript: z.string().max(50000).optional(),
+  summary: z.string().max(5000).optional(),
+  attendees: z.array(z.string().max(200)).max(50).optional(),
+  actionItems: z.array(z.string().max(500)).max(50).optional(),
 });
 export const MeetingUpdateSchema = MeetingCreateSchema.partial();
 
@@ -70,4 +75,13 @@ export const QuotationCreateSchema = z.object({
     .min(1),
   /** Tax as basis points (e.g. 1800 = 18%). Applied deterministically. */
   taxBps: z.number().int().min(0).max(10000).optional(),
+});
+
+export const IssueCreateSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().min(1).max(5000),
+});
+export const IssueUpdateSchema = z.object({
+  status: z.enum(["open", "investigating", "resolved", "closed"]).optional(),
+  assigneeId: z.string().max(64).optional(),
 });

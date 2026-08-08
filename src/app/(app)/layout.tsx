@@ -44,7 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <MobileTopBar workspace={workspace} />
         {children}
       </main>
-      <CommandPalette isOwner={user.isOwner} />
+      <CommandPalette isOwner={user.isOwner} userId={user.id} />
     </div>
   );
 }

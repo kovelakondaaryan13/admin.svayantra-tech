@@ -28,9 +28,32 @@ export interface Playbook extends BaseDoc {
   enabled: boolean;
 }
 
-/** A conveyor team shares access to every conveyor lead assigned to it. */
+/** One employee's stage assignment(s) within a conveyor team — an employee is never
+ *  limited to a single stage/role. */
+export interface ConveyorMemberRole {
+  userId: string;
+  stageKeys: string[];
+}
+
+/** Lightweight, flexible ideal-customer-profile criteria attached to a system. */
+export interface IcpCriteria {
+  industries?: string[];
+  minCompanySize?: number;
+  minBudgetMinor?: number;
+  notes?: string;
+}
+
+/**
+ * A "sales system" — either a Conveyor Belt (multi-employee, ownership moves stage to
+ * stage per `memberRoles`) or an Individual Funnel (each member runs their own leads
+ * end to end; `memberRoles`/`playbookKey` stage-mapping doesn't apply). Existing rows
+ * predate `model` and are treated as `"conveyor"` when absent.
+ */
 export interface ConveyorTeam extends BaseDoc {
   name: string;
+  model?: ExecutionModel;
   memberUserIds: string[];
+  memberRoles?: ConveyorMemberRole[];
   playbookKey?: string;
+  icp?: IcpCriteria;
 }

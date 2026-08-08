@@ -1,16 +1,10 @@
 import type { NextRequest } from "next/server";
-import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { ok, handleError } from "@/lib/http";
 import { conveyorTeamService } from "@/services/conveyor-team-service";
+import { ConveyorTeamCreateSchema as CreateSchema } from "@/lib/schemas/platform";
 
 export const runtime = "nodejs";
-
-const CreateSchema = z.object({
-  name: z.string().min(1).max(120),
-  memberUserIds: z.array(z.string().max(64)).max(50),
-  playbookKey: z.string().max(60).optional(),
-});
 
 export async function GET() {
   try {

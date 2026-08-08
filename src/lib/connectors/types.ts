@@ -33,6 +33,8 @@ export interface CalendarEvent {
   description?: string;
   location?: string;
   attendees?: string[];
+  conferenceUrl?: string; // populated on read once a video-conference link exists
+  requestConference?: boolean; // on create: ask the provider to generate one (e.g. Google Meet)
 }
 
 export interface ListEventsOptions {

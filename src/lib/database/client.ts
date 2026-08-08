@@ -9,6 +9,9 @@ import { MongoClient, type Db } from "mongodb";
 import dns from "node:dns";
 import { configureDns } from "@/lib/database/dns";
 import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
+
+const log = logger("database");
 
 interface Store {
   client: MongoClient;
@@ -52,19 +55,15 @@ async function connectWithRetry(client: MongoClient, attempts = 3): Promise<Mong
     try {
       // Re-apply DNS in THIS async context right before SRV resolution happens.
       configureDns();
-      console.log(
-        `[database] connecting (attempt ${attempt}/${attempts}); resolver=${dns.getServers().join(",")}`,
-      );
+      log.debug("connecting", { attempt, attempts, resolver: dns.getServers().join(",") });
       await client.connect();
       await client.db(env.MONGODB_DB()).command({ ping: 1 });
-      console.log("[database] connected + ping OK");
+      log.info("connected + ping OK");
       return client;
     } catch (err) {
       lastError = err;
       const code = (err as { code?: string }).code ?? (err as Error).name;
-      console.error(
-        `[database] connect attempt ${attempt} failed: ${code} — ${String((err as Error).message).split("\n")[0]}`,
-      );
+      log.error("connect attempt failed", { attempt, code, message: String((err as Error).message).split("\n")[0] });
       if (attempt < attempts) await new Promise((r) => setTimeout(r, 500 * attempt));
     }
   }

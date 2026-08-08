@@ -7,6 +7,8 @@ import { taskService } from "@/services/task-service";
 import { meetingService } from "@/services/meeting-service";
 import { leadService } from "@/services/lead-service";
 import { computeEmployeeView } from "@/services/employee-view-service";
+import { slaComplianceByOwner } from "@/services/conveyor-metrics-service";
+import { composeScore, workloadIdealnessSignal, capacityHeadroomSignal, taskCompletionSignal, reliabilitySignal, orgMedianCapacity } from "@/lib/employee-score";
 import { ObjectContext } from "@/components/context/object-context";
 import {
   ObjectPage, Section, KpiRow, StatTile, Timeline, Badge, Avatar,
@@ -32,7 +34,9 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   ]);
 
   // Computed view — all KPIs derived from live data (never stored).
-  const view = computeEmployeeView(person.userId, person.capacity, { leads: allLeads, tasks: allTasks, meetings: allMeetings });
+  const view = computeEmployeeView(person.userId, person.capacity, {
+    leads: allLeads, tasks: allTasks, meetings: allMeetings, slaByOwner: slaComplianceByOwner(allLeads),
+  });
 
   const now = Date.now();
   const myTasks = allTasks.filter((t) => t.assigneeId === person.userId);
@@ -43,6 +47,15 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const manager = employees.find((e) => e.userId === person.managerUserId);
   const reports = employees.filter((e) => e.managerUserId === person.userId);
   const overloaded = typeof person.capacity === "number" && open.length > person.capacity;
+  const orgCapacities = employees.filter((e) => typeof e.capacity === "number").map((e) => e.capacity!);
+  const medianCapacity = orgMedianCapacity(orgCapacities);
+  const score = composeScore([
+    { key: "workload", label: "Workload balance", value: workloadIdealnessSignal(open.length, person.capacity, medianCapacity), weight: 0.25 },
+    { key: "capacity", label: "Capacity headroom", value: capacityHeadroomSignal(open.length, person.capacity, medianCapacity), weight: 0.15 },
+    { key: "sla", label: "SLA compliance", value: view.slaCompliancePct, weight: 0.25 },
+    { key: "reliability", label: "On-time rate", value: reliabilitySignal(open.length, overdue.length), weight: 0.15 },
+    { key: "completion", label: "Task completion", value: taskCompletionSignal(done.length, open.length), weight: 0.2 },
+  ]);
 
   const availVariant: BadgeVariant = person.availability === "available" ? "success" : person.availability === "busy" ? "warning" : "neutral";
 
@@ -96,6 +109,12 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                 <>
                   <Section title="Workload & performance" variant="plain">
                     <KpiRow>
+                      <StatTile
+                        label="Overall score"
+                        value={`${score.overall} / 100`}
+                        tone={score.overall >= 70 ? "good" : score.overall >= 40 ? "neutral" : "bad"}
+                        icon="📊"
+                      />
                       <StatTile label="Open work" value={String(open.length)} tone={overloaded ? "bad" : "neutral"} icon="✅" />
                       <StatTile label="Overdue" value={String(overdue.length)} tone={overdue.length ? "bad" : "good"} icon="⏰" />
                       <StatTile label="Capacity" value={person.capacity ? String(person.capacity) : "—"} icon="📦" />

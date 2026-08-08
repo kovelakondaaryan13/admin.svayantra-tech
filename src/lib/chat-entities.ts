@@ -7,7 +7,7 @@
  */
 import type { BaseDoc } from "@/lib/entities";
 
-export type RelatedObjectType = "company" | "person" | "lead" | "meeting" | "document";
+export type RelatedObjectType = "company" | "person" | "lead" | "meeting" | "document" | "conveyor_team";
 
 export interface RelatedObject {
   type: RelatedObjectType;

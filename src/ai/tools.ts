@@ -303,7 +303,7 @@ const tools: Record<string, ToolDef> = {
     async run(input, ctx) {
       const emails = (Array.isArray(input.assigneeEmails) ? input.assigneeEmails : []).map((e) => String(e));
       if (!emails.length) return { output: { error: "no assignees provided" } };
-      const employees = await employeeService.list(ctx.user);
+      const employees = await employeeService.listDirectory(ctx.user);
       const reps = emails
         .map((em) => employees.find((e) => e.email.toLowerCase() === em.toLowerCase()))
         .filter((e): e is NonNullable<typeof e> => Boolean(e));
@@ -461,7 +461,7 @@ const tools: Record<string, ToolDef> = {
     },
     async run(input, ctx) {
       assertPermission(ctx.user, "tasks.assign");
-      const employees = await employeeService.list(ctx.user);
+      const employees = await employeeService.listDirectory(ctx.user);
       const emp = employees.find((e) => e.email.toLowerCase() === String(input.email).toLowerCase());
       if (!emp) return { output: { error: `no employee with email ${input.email}` } };
       let leadId: string | undefined;

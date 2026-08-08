@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { fmtINR as inr } from "@/lib/format";
+import { fmtINR as inr, monthLabel as MONTH_LABEL } from "@/lib/format";
+import { BarChart, BarChartH, type BarDatum } from "@/components/ds";
 import type { MetricsSummary } from "@/services/metrics-service";
 
 const STAGE_COLOR: Record<string, string> = {
@@ -77,6 +78,35 @@ export function Dashboard({
           </section>
         )}
       </div>
+
+      {/* Trend + funnel */}
+      {(metrics.funnel.some((f) => f.count > 0) || (showValues && metrics.revenueTrendByMonth.some((r) => r.wonMinor > 0))) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {showValues && metrics.revenueTrendByMonth.some((r) => r.wonMinor > 0) && (
+            <section className="glass p-4">
+              <div className="mb-2 text-sm font-medium text-fg">Monthly revenue trend</div>
+              <BarChart data={metrics.revenueTrendByMonth.map((r): BarDatum => ({
+                label: MONTH_LABEL(r.month),
+                value: r.wonMinor,
+                display: inr(r.wonMinor),
+              }))} />
+            </section>
+          )}
+          {metrics.funnel.some((f) => f.count > 0) && (
+            <section className="glass p-4">
+              <div className="mb-2 text-sm font-medium text-fg">Stage conversion funnel</div>
+              <BarChartH data={metrics.funnel.map((f): BarDatum => ({
+                label: f.stage,
+                value: f.count,
+                display: f.conversionFromPrevPct == null ? `${f.count}` : `${f.count} (${f.conversionFromPrevPct}%)`,
+              }))} />
+              {metrics.avgSalesCycleDays != null && (
+                <p className="mt-3 text-xs text-muted">Average sales cycle: <span className="text-fg">{metrics.avgSalesCycleDays} days</span></p>
+              )}
+            </section>
+          )}
+        </div>
+      )}
 
       {/* Needs attention */}
       {metrics.atRisk.length > 0 && (

@@ -5,6 +5,12 @@
  */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** "YYYY-MM" (e.g. metrics bucket keys) → 3-letter month abbreviation, e.g. "2026-08" → "Aug". */
+export function monthLabel(yyyyMm: string): string {
+  const [, mo] = yyyyMm.split("-");
+  return MONTHS[Number(mo) - 1] ?? yyyyMm;
+}
+
 export function fmtDate(input: Date | string | number): string {
   const d = new Date(input);
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;

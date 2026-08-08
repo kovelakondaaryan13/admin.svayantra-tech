@@ -92,22 +92,25 @@ export function CommandCenterView({ cc }: { cc: CommandCenter }) {
           {cc.utilization.length === 0 ? (
             <Empty text="No open work assigned." />
           ) : (
-            cc.utilization.map((u) => {
-              const pct = u.capacity && u.capacity > 0 ? Math.min(100, Math.round((u.openCount / u.capacity) * 100)) : null;
-              return (
-                <div key={u.userId} className="space-y-1 py-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-fg">{u.name}</span>
-                    <span className={u.overloaded ? "text-action" : "text-muted"}>
-                      {u.openCount}{u.capacity ? `/${u.capacity}` : ""}{u.overloaded ? " · overloaded" : ""}
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-overlay/[0.06]">
-                    <div className={`h-full rounded-full ${u.overloaded ? "bg-action" : "bg-teal"}`} style={{ width: `${pct ?? Math.min(100, u.openCount * 12)}%` }} />
-                  </div>
+            cc.utilization.map((u) => (
+              <div key={u.userId} className="space-y-1 py-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-fg">{u.name}</span>
+                  <span
+                    title={u.scoreBreakdown.map((s) => `${s.label}: ${s.value}`).join(" · ")}
+                    className={u.score >= 70 ? "text-teal" : u.score >= 40 ? "text-muted" : "text-action"}
+                  >
+                    {u.score} / 100{u.overloaded ? " · overloaded" : ""}
+                  </span>
                 </div>
-              );
-            })
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-overlay/[0.06]">
+                  <div className={`h-full rounded-full ${u.overloaded ? "bg-action" : "bg-teal"}`} style={{ width: `${u.score}%` }} />
+                </div>
+                <div className="text-[11px] text-muted">
+                  {u.openCount} open{u.capacity ? ` of ${u.capacity} capacity` : ""}
+                </div>
+              </div>
+            ))
           )}
         </Panel>
 

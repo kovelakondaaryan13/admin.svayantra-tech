@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { leadService } from "@/services/lead-service";
+import { leadService, computeContributors } from "@/services/lead-service";
 import { taskService } from "@/services/task-service";
 import { meetingService } from "@/services/meeting-service";
 import { proposalService } from "@/services/proposal-service";
@@ -52,6 +52,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
   const nameByUser: Record<string, string> = {};
   for (const e of employees) nameByUser[e.userId] = e.name;
   const teamName = lead.conveyorTeamId ? teams.find((t) => t.id === lead.conveyorTeamId)?.name : undefined;
+  const contributors = computeContributors(lead, tasks, nameByUser);
 
   const valMinor = lead.value?.amountMinor ?? 0;
   const prob = lead.probability ?? STAGE_PROB[lead.stage] ?? 0;
@@ -116,6 +117,21 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
                         ))}
                         {(lead.buyingCommittee ?? []).map((n, i) => (
                           <div key={`bc-${i}`} className="rounded-lg px-2 py-2 text-sm text-fg hover:bg-overlay/[0.03]">{n} <span className="t-micro">committee</span></div>
+                        ))}
+                      </div>
+                    )}
+                  </Section>
+                  <Section title={`Contributors (${contributors.length})`}>
+                    {contributors.length === 0 ? (
+                      <p className="px-1 py-2 text-sm text-muted">Nobody has worked this deal yet.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {contributors.map((c) => (
+                          <div key={`${c.userId}-${c.viaAi}`} className="rounded-lg px-2 py-2 text-sm hover:bg-overlay/[0.03]">
+                            <span className="text-fg">{c.name}</span>
+                            {c.viaAi && <span className="t-micro"> (via AI)</span>}
+                            <div className="t-micro">{c.actions.join(" · ")}</div>
+                          </div>
                         ))}
                       </div>
                     )}

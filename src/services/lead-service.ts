@@ -15,6 +15,47 @@ import { NotFound, BusinessRule, Forbidden } from "@/lib/errors";
 import type { Lead, LeadDTO, LeadStage, User } from "@/lib/types";
 import type { LeadCreateInput, LeadUpdateInput } from "@/lib/schemas/lead";
 
+export interface Contributor {
+  userId: string;
+  name: string;
+  viaAi: boolean;
+  actions: string[];
+}
+
+/**
+ * Every employee who has actually touched this lead — not just its current owner —
+ * derived from data already on the record (ownership handoffs, stage advances, linked
+ * tasks). Pure/no I/O so callers can pass in whatever task list they already loaded.
+ * Human and AI-driven actions by the same person show as separate rows (matches the
+ * "ai:<id>" actor-id convention used everywhere else audit trails are attributed).
+ */
+export function computeContributors(
+  lead: Pick<Lead, "ownerId" | "ownerHistory" | "stageHistory">,
+  tasks: { assigneeId: string; title: string }[],
+  nameByUser: Record<string, string>,
+): Contributor[] {
+  const byKey = new Map<string, Contributor>();
+  const touch = (rawId: string | undefined, action: string) => {
+    if (!rawId) return;
+    const viaAi = rawId.startsWith("ai:");
+    const userId = viaAi ? rawId.slice(3) : rawId;
+    const key = `${userId}:${viaAi}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      if (!existing.actions.includes(action)) existing.actions.push(action);
+    } else {
+      byKey.set(key, { userId, name: nameByUser[userId] ?? userId, viaAi, actions: [action] });
+    }
+  };
+
+  touch(lead.ownerId, "Current owner");
+  for (const h of lead.ownerHistory ?? []) touch(h.ownerId, `Owned during ${h.stage}`);
+  for (const s of lead.stageHistory ?? []) touch(s.actorId, `Advanced to ${s.to}`);
+  for (const t of tasks) touch(t.assigneeId, `Working task "${t.title}"`);
+
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Is the caller a sales manager (can act on any lead)? */
 function isManager(user: User): boolean {
   return isOwner(user) || can(user, "sales.assign") || can(user, "crm.delete");
@@ -60,6 +101,7 @@ export const leadService = {
       name: input.name,
       email: input.email,
       company: input.company,
+      companyId: input.companyId,
       source: input.source as import("@/lib/types").LeadSource | undefined,
       campaign: input.campaign,
       value: input.value,

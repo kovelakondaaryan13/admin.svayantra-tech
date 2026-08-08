@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { assertPermission } from "@/lib/iam";
 import { ok, handleError } from "@/lib/http";
 import { settingsService } from "@/services/settings-service";
+import { OrgSettingsPatchSchema } from "@/lib/schemas/platform";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function PATCH(req: NextRequest) {
   try {
     const user = await requireUser();
     assertPermission(user, "org.manage");
-    const patch = (await req.json()) as Record<string, unknown>;
+    const patch = OrgSettingsPatchSchema.parse(await req.json());
     const data = await settingsService.updateOrg(user, patch);
     return ok(data);
   } catch (err) {

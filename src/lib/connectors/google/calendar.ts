@@ -1,5 +1,6 @@
 /** GoogleCalendarProvider — stateless REST client. Refresh/decryption live in the
  *  credential layer; this only takes an access token. */
+import crypto from "node:crypto";
 import type {
   CalendarEvent,
   CalendarProvider,
@@ -16,6 +17,8 @@ interface GEvent {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: { email: string }[];
+  hangoutLink?: string;
+  conferenceData?: { entryPoints?: { entryPointType: string; uri: string }[] };
 }
 
 function mapEvent(e: GEvent): CalendarEvent {
@@ -27,6 +30,7 @@ function mapEvent(e: GEvent): CalendarEvent {
     description: e.description,
     location: e.location,
     attendees: e.attendees?.map((a) => a.email),
+    conferenceUrl: e.hangoutLink ?? e.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri,
   };
 }
 
@@ -38,6 +42,11 @@ function toGoogle(ev: Partial<Omit<CalendarEvent, "id">>): Record<string, unknow
   if (ev.start !== undefined) g.start = { dateTime: ev.start };
   if (ev.end !== undefined) g.end = { dateTime: ev.end };
   if (ev.attendees !== undefined) g.attendees = ev.attendees.map((email) => ({ email }));
+  if (ev.requestConference) {
+    g.conferenceData = {
+      createRequest: { requestId: crypto.randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } },
+    };
+  }
   return g;
 }
 
@@ -67,7 +76,8 @@ export const googleCalendar: CalendarProvider = {
   },
 
   async createEvent(token, event) {
-    const json = await call<GEvent>(BASE, token, "POST", toGoogle(event));
+    const url = event.requestConference ? `${BASE}?conferenceDataVersion=1` : BASE;
+    const json = await call<GEvent>(url, token, "POST", toGoogle(event));
     return mapEvent(json);
   },
 

@@ -2,6 +2,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ds";
+import { switchWorkspace } from "@/lib/workspace-client";
+
+const RECENT_SEARCHES_LIMIT = 5;
 
 interface Item {
   id: string;
@@ -27,25 +30,39 @@ const TYPE_GROUP: Record<string, string> = { company: "Companies", employee: "Pe
  * leads/companies/employees/documents, run AI, and switch Demo⇄Production — the fastest way
  * to operate STOS as an OS rather than a set of pages.
  */
-export function CommandPalette({ isOwner }: { isOwner: boolean }) {
+export function CommandPalette({ isOwner, userId }: { isOwner: boolean; userId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [active, setActive] = useState(0);
+  const [modeError, setModeError] = useState<string | null>(null);
+  const [recent, setRecent] = useState<string[]>([]);
   const [, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
+  const recentKey = `stos:recentSearches:${userId}`;
 
   const go = useCallback((href: string) => { setOpen(false); router.push(href); }, [router]);
 
+  const runSearchHit = useCallback((href: string, query: string) => {
+    if (query.trim()) {
+      setRecent((prev) => {
+        const next = [query.trim(), ...prev.filter((r) => r.toLowerCase() !== query.trim().toLowerCase())].slice(0, RECENT_SEARCHES_LIMIT);
+        try { window.localStorage.setItem(recentKey, JSON.stringify(next)); } catch { /* localStorage unavailable */ }
+        return next;
+      });
+    }
+    go(href);
+  }, [go, recentKey]);
+
   const switchMode = useCallback(async (mode: "demo" | "production") => {
-    setOpen(false);
-    const res = await fetch("/api/admin/mode", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
-    if (!res.ok) {
-      const b = await res.json().catch(() => ({}));
-      alert(b?.error ?? "Could not switch workspace mode.");
+    setModeError(null);
+    const result = await switchWorkspace(mode);
+    if (!result.ok) {
+      setModeError(result.error);
       return;
     }
+    setOpen(false);
     startTransition(() => router.refresh());
   }, [router]);
 
@@ -101,8 +118,15 @@ export function CommandPalette({ isOwner }: { isOwner: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (open) { setQ(""); setHits([]); setActive(0); setTimeout(() => inputRef.current?.focus(), 20); }
-  }, [open]);
+    if (open) {
+      setQ(""); setHits([]); setActive(0); setModeError(null);
+      try {
+        const stored = window.localStorage.getItem(recentKey);
+        setRecent(stored ? (JSON.parse(stored) as string[]) : []);
+      } catch { setRecent([]); }
+      setTimeout(() => inputRef.current?.focus(), 20);
+    }
+  }, [open, recentKey]);
 
   // Debounced entity search.
   useEffect(() => {
@@ -126,8 +150,8 @@ export function CommandPalette({ isOwner }: { isOwner: boolean }) {
   // Flatten into an ordered list for keyboard nav.
   const rows: Item[] = useMemo(() => [
     ...filteredCommands,
-    ...hits.map((h) => ({ id: `${h.type}:${h.id}`, title: h.title, subtitle: h.subtitle, icon: TYPE_ICON[h.type] ?? "•", group: TYPE_GROUP[h.type] ?? "Results", run: () => go(h.href) })),
-  ], [filteredCommands, hits, go]);
+    ...hits.map((h) => ({ id: `${h.type}:${h.id}`, title: h.title, subtitle: h.subtitle, icon: TYPE_ICON[h.type] ?? "•", group: TYPE_GROUP[h.type] ?? "Results", run: () => runSearchHit(h.href, q) })),
+  ], [filteredCommands, hits, runSearchHit, q]);
 
   useEffect(() => { setActive((a) => Math.min(a, Math.max(0, rows.length - 1))); }, [rows.length]);
 
@@ -155,10 +179,39 @@ export function CommandPalette({ isOwner }: { isOwner: boolean }) {
           placeholder="Search or jump to…  (leads, people, docs, pages)"
           className="w-full bg-transparent py-3.5 text-sm text-fg outline-none placeholder:text-muted"
         />
+        {q && (
+          <button
+            type="button"
+            onClick={() => { setQ(""); setHits([]); inputRef.current?.focus(); }}
+            aria-label="Clear search"
+            className="rounded p-1 text-muted transition-colors hover:text-fg"
+          >
+            ✕
+          </button>
+        )}
         <kbd className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">esc</kbd>
       </div>
 
+      {modeError && (
+        <p role="alert" className="border-b border-overlay/5 px-4 py-2 text-xs text-action">{modeError}</p>
+      )}
+
       <div className="max-h-[52vh] overflow-y-auto py-2">
+        {!q.trim() && recent.length > 0 && (
+          <div className="mb-1">
+            <div className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Recent searches</div>
+            {recent.map((r) => (
+              <button
+                key={r}
+                onClick={() => setQ(r)}
+                className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-fg/85 transition-colors hover:bg-overlay/[0.03]"
+              >
+                <span className="w-5 text-center text-base leading-none opacity-60">↺</span>
+                <span className="min-w-0 flex-1 truncate">{r}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {rows.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-muted">No matches.</p>
         ) : (

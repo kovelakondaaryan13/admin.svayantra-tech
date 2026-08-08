@@ -175,6 +175,21 @@ export const employeeService = {
     return (await employees.list(user.orgId)).map(toDTO);
   },
 
+  /**
+   * Minimal teammate directory (userId/name/email/roleKey only) for collaboration features
+   * like AI-driven task/lead assignment ("ask Priya to follow up"). Any org member may resolve
+   * a colleague's identity this way — unlike `list`, it doesn't require `users.read` because it
+   * exposes none of the sensitive HR fields (capacity, manager, phone, etc.) that gate does.
+   */
+  async listDirectory(user: User): Promise<{ userId: string; name: string; email: string; roleKey: string }[]> {
+    return (await employees.list(user.orgId)).map((e) => ({
+      userId: e.userId,
+      name: e.name,
+      email: e.email,
+      roleKey: e.roleKey,
+    }));
+  },
+
   async get(user: User, id: string): Promise<DTO<Employee>> {
     assertPermission(user, "users.read");
     const doc = await employees.findById(user.orgId, id);

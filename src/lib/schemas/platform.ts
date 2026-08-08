@@ -96,3 +96,59 @@ export const WorkflowActSchema = z.object({
   decision: z.enum(["approved", "rejected"]),
   note: z.string().max(1000).optional(),
 });
+
+const PlaybookStageSchema = z.object({
+  key: z.string().min(1).max(60),
+  label: z.string().min(1).max(120),
+  slaHours: z.number().nonnegative().max(100000).optional(),
+  ownerRole: z.string().max(60).optional(),
+  entryCriteria: z.string().max(2000).optional(),
+  exitCriteria: z.string().max(2000).optional(),
+  aiPrompt: z.string().max(4000).optional(),
+  artifacts: z.array(z.string().max(200)).optional(),
+});
+
+export const PlaybookCreateSchema = z.object({
+  key: z.string().min(2).max(60).regex(/^[a-z0-9_]+$/),
+  label: z.string().min(1).max(120),
+  model: z.enum(["individual", "conveyor"]),
+  description: z.string().max(2000).optional(),
+  stages: z.array(PlaybookStageSchema),
+  kpis: z.array(z.string().max(120)).optional(),
+  enabled: z.boolean().optional(),
+});
+
+export const ConveyorIcpSchema = z.object({
+  industries: z.array(z.string().max(60)).max(20).optional(),
+  minCompanySize: z.number().int().nonnegative().optional(),
+  minBudgetMinor: z.number().int().nonnegative().optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+export const ConveyorMemberRolesSchema = z
+  .array(z.object({ userId: z.string().max(64), stageKeys: z.array(z.string().max(60)).max(20) }))
+  .max(50);
+
+export const ConveyorTeamCreateSchema = z.object({
+  name: z.string().min(1).max(120),
+  model: z.enum(["individual", "conveyor"]).optional(),
+  memberUserIds: z.array(z.string().max(64)).max(50),
+  memberRoles: ConveyorMemberRolesSchema.optional(),
+  playbookKey: z.string().max(60).optional(),
+  icp: ConveyorIcpSchema.optional(),
+});
+export const ConveyorTeamUpdateSchema = ConveyorTeamCreateSchema.partial();
+
+export const OrgSettingsPatchSchema = z.object({
+  companyName: z.string().max(200).optional(),
+  website: z.string().max(300).optional(),
+  industry: z.string().max(80).optional(),
+  companySize: z.string().max(20).optional(),
+  timezone: z.string().max(60).optional(),
+  currency: z.string().max(10).optional(),
+  dateFormat: z.string().max(20).optional(),
+  workingHoursStart: z.string().max(10).optional(),
+  workingHoursEnd: z.string().max(10).optional(),
+  workingDays: z.array(z.string().max(10)).optional(),
+  autoApproveThreshold: z.enum(["never", "low-risk", "all"]).optional(),
+});

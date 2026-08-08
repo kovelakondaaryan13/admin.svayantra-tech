@@ -211,6 +211,9 @@ export const taskService = {
     await audit.record({ actor: user, action: "task.update", entity: id });
     if (input.status === "done" && before.status !== "done") {
       await activityService.log(user, "task", id, "completed", `Completed "${before.title}"`);
+      if (before.createdById) {
+        await notify(user.orgId, before.createdById, user.id, `"${before.title}" was completed`);
+      }
     }
 
     // Recurring tasks: on completion, spawn the next occurrence.

@@ -9,6 +9,7 @@ import { uploadedFiles, ingestionService } from "@/services/ingestion-service";
 import { record } from "@/lib/telemetry";
 import { NotFound } from "@/lib/errors";
 import { filterByRelated, type RelatedObject } from "@/lib/chat-entities";
+import { getUploadRetentionDays } from "@/lib/upload-retention";
 import type { UploadedFile } from "@/lib/file-entities";
 import type { DTO } from "@/lib/entities";
 import type { User } from "@/lib/types";
@@ -75,5 +76,25 @@ export const uploadService = {
     if (!meta) throw new NotFound("file not found");
     await deleteFile(meta.fileId);
     await uploadedFiles.softDelete(user.orgId, recordId);
+  },
+
+  /** Delete failed uploads older than the org's configured retention window (default 7
+   *  days) — a parser failure shouldn't sit in Knowledge forever with no path forward. */
+  async sweepFailed(user: User): Promise<{ swept: number; retentionDays: number }> {
+    const retentionDays = await getUploadRetentionDays(user.orgId);
+    const cutoff = new Date(Date.now() - retentionDays * 86_400_000);
+    const rows = await uploadedFiles.list(user.orgId, { status: "failed" } as never, 500);
+    const stale = rows.filter((r) => new Date(r.lastProcessedAt ?? r.updatedAt).getTime() < cutoff.getTime());
+    const BATCH = 20;
+    for (let i = 0; i < stale.length; i += BATCH) {
+      await Promise.all(
+        stale.slice(i, i + BATCH).map(async (r) => {
+          await deleteFile(r.fileId).catch(() => undefined);
+          await uploadedFiles.softDelete(user.orgId, r._id.toHexString());
+        }),
+      );
+    }
+    record("upload", "swept", { count: stale.length, retentionDays });
+    return { swept: stale.length, retentionDays };
   },
 };

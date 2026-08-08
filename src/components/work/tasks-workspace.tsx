@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { WorkScope } from "@/services/task-service";
 import { fmtDate } from "@/lib/format";
+import { composeScore, workloadIdealnessSignal, capacityHeadroomSignal, taskCompletionSignal, reliabilitySignal, orgMedianCapacity } from "@/lib/employee-score";
 
 interface TaskRow {
   id: string;
@@ -120,6 +121,23 @@ export function TasksWorkspace({
     router.refresh();
   }
 
+  /** Drag-and-drop in the calendar view — moves a task to a new day, keeping its time-of-day. */
+  async function moveTaskDate(t: TaskRow, day: Date) {
+    const prevDueAt = t.dueAt;
+    const next = new Date(day);
+    if (t.dueAt) { const old = new Date(t.dueAt); next.setHours(old.getHours(), old.getMinutes(), 0, 0); }
+    else next.setHours(9, 0, 0, 0);
+    const nextIso = next.toISOString();
+    setTasks((ts) => ts.map((x) => (x.id === t.id ? { ...x, dueAt: nextIso } : x)));
+    const res = await fetch(`/api/tasks/${t.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dueAt: nextIso }),
+    });
+    if (!res.ok) setTasks((ts) => ts.map((x) => (x.id === t.id ? { ...x, dueAt: prevDueAt } : x)));
+    router.refresh();
+  }
+
   const open = tasks.filter((t) => t.status === "open");
   const done = tasks.filter((t) => t.status === "done");
   const overdueCount = open.filter(overdue).length;
@@ -199,10 +217,11 @@ export function TasksWorkspace({
       ) : view === "board" ? (
         <BoardView open={open} {...cardProps} />
       ) : view === "calendar" ? (
-        <CalendarView open={open} {...cardProps} />
+        <CalendarView open={open} done={done} onMove={moveTaskDate} {...cardProps} />
       ) : (
         <WorkloadView
           open={open}
+          done={done}
           nameById={nameById}
           capacityById={capacityById}
           currentUserId={currentUserId}
@@ -266,35 +285,142 @@ function BoardView({ open, ...cardProps }: { open: TaskRow[] } & CardProps) {
   );
 }
 
-function CalendarView({ open, ...cardProps }: { open: TaskRow[] } & CardProps) {
-  const today = startOfDay(new Date());
-  const tomorrow = new Date(today.getTime() + 86400000);
-  const weekEnd = new Date(today.getTime() + 7 * 86400000);
+type CalScope = "month" | "week" | "day";
+const WEEKDAY_LABEL = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_LABEL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-  const buckets: { label: string; test: (d: Date) => boolean }[] = [
-    { label: "Overdue", test: (d) => d < today },
-    { label: "Today", test: (d) => d >= today && d < tomorrow },
-    { label: "Tomorrow", test: (d) => d >= tomorrow && d < new Date(tomorrow.getTime() + 86400000) },
-    { label: "This week", test: (d) => d >= new Date(tomorrow.getTime() + 86400000) && d < weekEnd },
-    { label: "Later", test: (d) => d >= weekEnd },
-  ];
+function daysForRange(scope: CalScope, anchor: Date): Date[] {
+  if (scope === "day") return [startOfDay(anchor)];
+  if (scope === "week") {
+    const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - anchor.getDay());
+    return Array.from({ length: 7 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+  }
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const start = new Date(first.getFullYear(), first.getMonth(), first.getDate() - first.getDay());
+  return Array.from({ length: 42 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+}
 
-  const dated = open.filter((t) => t.dueAt);
+function rangeLabel(scope: CalScope, anchor: Date): string {
+  if (scope === "month") return `${MONTH_LABEL[anchor.getMonth()]} ${anchor.getFullYear()}`;
+  if (scope === "day") return `${WEEKDAY_FULL[anchor.getDay()]}, ${MONTH_LABEL[anchor.getMonth()]} ${anchor.getDate()}`;
+  const [start, end] = [daysForRange("week", anchor)[0], daysForRange("week", anchor)[6]];
+  return `${MONTH_LABEL[start.getMonth()].slice(0, 3)} ${start.getDate()} – ${MONTH_LABEL[end.getMonth()].slice(0, 3)} ${end.getDate()}, ${end.getFullYear()}`;
+}
+
+function CalendarView({
+  open,
+  done,
+  onMove,
+  ...cardProps
+}: { open: TaskRow[]; done: TaskRow[]; onMove: (t: TaskRow, day: Date) => void } & CardProps) {
+  const [scope, setScope] = useState<CalScope>("month");
+  const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
+
+  const all = [...open, ...done];
+  const dated = all.filter((t) => t.dueAt);
   const undated = open.filter((t) => !t.dueAt);
+  const byDay = new Map<string, TaskRow[]>();
+  for (const t of dated) {
+    const key = startOfDay(new Date(t.dueAt!)).toDateString();
+    byDay.set(key, [...(byDay.get(key) ?? []), t]);
+  }
+
+  const days = daysForRange(scope, anchor);
+  const maxPerCell = scope === "day" ? 40 : scope === "week" ? 6 : 3;
+  const todayKey = startOfDay(new Date()).toDateString();
+
+  function shift(dir: 1 | -1) {
+    setAnchor((a) => {
+      const next = new Date(a);
+      if (scope === "month") next.setMonth(next.getMonth() + dir);
+      else if (scope === "week") next.setDate(next.getDate() + dir * 7);
+      else next.setDate(next.getDate() + dir);
+      return next;
+    });
+  }
 
   return (
-    <div className="space-y-4">
-      {buckets.map((b) => {
-        const items = dated.filter((t) => b.test(startOfDay(new Date(t.dueAt!))));
-        if (items.length === 0) return null;
-        return (
-          <Column key={b.label} title={`${b.label} (${items.length})`}>
-            {items
-              .sort((a, z) => new Date(a.dueAt!).getTime() - new Date(z.dueAt!).getTime())
-              .map((t) => <TaskCard key={t.id} t={t} {...cardProps} />)}
-          </Column>
-        );
-      })}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <button onClick={() => shift(-1)} aria-label="Previous" className="btn-ghost px-2 py-1 text-xs">←</button>
+          <button onClick={() => setAnchor(startOfDay(new Date()))} className="btn-ghost px-2.5 py-1 text-xs">Today</button>
+          <button onClick={() => shift(1)} aria-label="Next" className="btn-ghost px-2 py-1 text-xs">→</button>
+          <span className="ml-1 text-sm font-medium text-fg">{rangeLabel(scope, anchor)}</span>
+        </div>
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-overlay/[0.03] p-0.5">
+          {(["month", "week", "day"] as CalScope[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => setScope(s)}
+              className={`rounded-lg px-2.5 py-1 text-xs capitalize transition-colors ${scope === s ? "bg-overlay/10 text-fg" : "text-muted hover:text-fg"}`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {scope !== "day" && (
+        <div className="grid grid-cols-7 gap-1">
+          {WEEKDAY_LABEL.map((d) => (
+            <div key={d} className="px-1 pb-1 text-center text-[10px] font-semibold uppercase tracking-wide text-muted">{d}</div>
+          ))}
+        </div>
+      )}
+
+      <div className={scope === "day" ? "space-y-1" : "grid grid-cols-7 gap-1"}>
+        {days.map((day) => {
+          const key = day.toDateString();
+          const items = byDay.get(key) ?? [];
+          const inMonth = scope !== "month" || day.getMonth() === anchor.getMonth();
+          const isToday = key === todayKey;
+          return (
+            <div
+              key={key}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const id = e.dataTransfer.getData("text/task-id");
+                const t = all.find((x) => x.id === id);
+                if (t) onMove(t, day);
+              }}
+              className={`rounded-lg border p-1.5 transition-colors ${scope === "day" ? "min-h-[280px]" : "min-h-[86px]"} ${
+                inMonth ? "border-border" : "border-transparent opacity-40"
+              } ${isToday ? "border-accent/40 bg-accent/[0.06]" : "hover:border-overlay/15"}`}
+            >
+              <div className={`mb-1 text-[11px] ${isToday ? "font-semibold text-accent" : "text-muted"}`}>
+                {scope === "day" ? `${WEEKDAY_FULL[day.getDay()]} ${day.getDate()}` : day.getDate()}
+              </div>
+              <div className="space-y-0.5">
+                {items.slice(0, maxPerCell).map((t) => (
+                  <div
+                    key={t.id}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.setData("text/task-id", t.id); e.dataTransfer.effectAllowed = "move"; }}
+                    onClick={() => cardProps.onToggle(t)}
+                    title={t.title}
+                    className={`cursor-grab truncate rounded px-1 py-0.5 text-[11px] hover:bg-overlay/[0.06] ${
+                      t.status === "done"
+                        ? "text-muted line-through"
+                        : overdue(t)
+                          ? "bg-action/10 text-action"
+                          : PRIORITY_COLOR[t.priority ?? ""] ?? "text-fg"
+                    }`}
+                  >
+                    {t.title}
+                  </div>
+                ))}
+                {items.length > maxPerCell && (
+                  <div className="text-[10px] text-muted">+{items.length - maxPerCell} more</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {dated.length === 0 && <Empty text="No tasks have due dates yet." />}
       {undated.length > 0 && (
         <Column title={`No due date (${undated.length})`}>
@@ -307,32 +433,52 @@ function CalendarView({ open, ...cardProps }: { open: TaskRow[] } & CardProps) {
 
 function WorkloadView({
   open,
+  done,
   nameById,
   capacityById,
   currentUserId,
   scope,
 }: {
   open: TaskRow[];
+  done: TaskRow[];
   nameById: Record<string, string>;
   capacityById: Record<string, number>;
   currentUserId: string;
   scope: WorkScope;
 }) {
-  const counts = new Map<string, { openCount: number; overdue: number }>();
+  const counts = new Map<string, { openCount: number; overdue: number; doneCount: number }>();
   for (const t of open) {
-    const row = counts.get(t.assigneeId) ?? { openCount: 0, overdue: 0 };
+    const row = counts.get(t.assigneeId) ?? { openCount: 0, overdue: 0, doneCount: 0 };
     row.openCount += 1;
     if (overdue(t)) row.overdue += 1;
     counts.set(t.assigneeId, row);
   }
+  for (const t of done) {
+    const row = counts.get(t.assigneeId) ?? { openCount: 0, overdue: 0, doneCount: 0 };
+    row.doneCount += 1;
+    counts.set(t.assigneeId, row);
+  }
+  const medianCapacity = orgMedianCapacity(Object.values(capacityById));
+
   const rows = [...counts.entries()]
-    .map(([userId, c]) => ({
-      userId,
-      name: userId === currentUserId ? `${nameById[userId] ?? "You"} (you)` : nameById[userId] ?? "Unassigned",
-      capacity: capacityById[userId],
-      ...c,
-    }))
-    .sort((a, b) => b.openCount - a.openCount);
+    .map(([userId, c]) => {
+      const capacity = capacityById[userId];
+      const score = composeScore([
+        { key: "workload", label: "Workload balance", value: workloadIdealnessSignal(c.openCount, capacity, medianCapacity), weight: 0.4 },
+        { key: "capacity", label: "Capacity headroom", value: capacityHeadroomSignal(c.openCount, capacity, medianCapacity), weight: 0.2 },
+        { key: "reliability", label: "On-time rate", value: reliabilitySignal(c.openCount, c.overdue), weight: 0.2 },
+        { key: "completion", label: "Task completion", value: taskCompletionSignal(c.doneCount, c.openCount), weight: 0.2 },
+      ]);
+      return {
+        userId,
+        name: userId === currentUserId ? `${nameById[userId] ?? "You"} (you)` : nameById[userId] ?? "Unassigned",
+        capacity,
+        score: score.overall,
+        scoreBreakdown: score.signals,
+        ...c,
+      };
+    })
+    .sort((a, b) => a.score - b.score);
 
   if (rows.length === 0) return <Empty text="No open work to distribute." />;
 
@@ -340,29 +486,31 @@ function WorkloadView({
     <section className="glass p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium text-fg">Workload — {SCOPE_LABEL[scope]}</h2>
-        <span className="text-xs text-muted">open items vs. capacity</span>
+        <span className="text-xs text-muted">overall score — lowest first</span>
       </div>
       <div className="space-y-3">
         {rows.map((r) => {
-          const cap = r.capacity;
-          const pct = cap && cap > 0 ? Math.min(100, Math.round((r.openCount / cap) * 100)) : null;
-          const over = cap != null && r.openCount > cap;
+          const over = r.capacity != null && r.openCount > r.capacity;
           return (
             <div key={r.userId} className="space-y-1">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-fg">{r.name}</span>
-                <span className={over ? "text-action" : "text-muted"}>
-                  {r.openCount}
-                  {cap != null ? ` / ${cap}` : ""} open
-                  {r.overdue > 0 ? ` · ${r.overdue} overdue` : ""}
-                  {over ? " · overloaded" : ""}
+                <span
+                  title={r.scoreBreakdown.map((s) => `${s.label}: ${s.value}`).join(" · ")}
+                  className={r.score >= 70 ? "text-teal" : r.score >= 40 ? "text-muted" : "text-action"}
+                >
+                  {r.score} / 100{over ? " · overloaded" : ""}
                 </span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-overlay/[0.06]">
                 <div
                   className={`h-full rounded-full ${over ? "bg-action" : "bg-teal"}`}
-                  style={{ width: `${pct ?? Math.min(100, r.openCount * 12)}%` }}
+                  style={{ width: `${r.score}%` }}
                 />
+              </div>
+              <div className="text-[11px] text-muted">
+                {r.openCount} open{r.capacity != null ? ` of ${r.capacity} capacity` : ""}
+                {r.overdue > 0 ? ` · ${r.overdue} overdue` : ""}
               </div>
             </div>
           );

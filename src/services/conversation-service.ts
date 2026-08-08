@@ -45,7 +45,8 @@ export const conversationService = {
         rows.filter((c) => (c.title + " " + (c.summary ?? "")).toLowerCase().includes(q)).map((c) => c._id.toHexString()),
       );
       // ...and on message content (simple text search, not semantic).
-      const msgHits = await messages.list(user.orgId, { content: { $regex: q, $options: "i" } } as never, 300);
+      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const msgHits = await messages.list(user.orgId, { content: { $regex: rx } } as never, 300);
       for (const m of msgHits) byMeta.add(m.conversationId);
       rows = rows.filter((c) => byMeta.has(c._id.toHexString()));
     }

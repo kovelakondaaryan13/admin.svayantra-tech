@@ -33,14 +33,18 @@ export default async function SalesModelsPage() {
         description: p.description,
         stageCount: p.stages.length,
         stageLabels: p.stages.map((s) => s.label),
+        stages: p.stages.map((s) => ({ key: s.key, label: s.label })),
         kpis: p.kpis,
         enabled: p.enabled,
       }))}
       teams={teams.map((t) => ({
         id: t.id,
         name: t.name,
+        model: t.model ?? "conveyor",
         memberUserIds: t.memberUserIds,
+        memberRoles: t.memberRoles,
         playbookKey: t.playbookKey,
+        icp: t.icp,
       }))}
       employees={employees
         .filter((e) => e.status === "active")

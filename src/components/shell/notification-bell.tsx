@@ -21,6 +21,7 @@ const TYPE_ICON: Record<string, string> = {
   alert: "⚠️",
   meeting: "📅",
   system: "🔧",
+  issue: "🛠️",
 };
 
 const relTime = (iso: string) => fmtRelativeTime(iso, { granularity: "minute" });

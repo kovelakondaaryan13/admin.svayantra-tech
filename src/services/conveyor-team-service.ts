@@ -3,16 +3,19 @@ import { repo, toDTO } from "@/data/collection";
 import * as audit from "@/lib/audit";
 import { assertPermission } from "@/lib/iam";
 import { NotFound } from "@/lib/errors";
-import type { ConveyorTeam } from "@/lib/sales-entities";
+import type { ConveyorTeam, ConveyorMemberRole, IcpCriteria } from "@/lib/sales-entities";
 import type { DTO } from "@/lib/entities";
-import type { User } from "@/lib/types";
+import type { User, ExecutionModel } from "@/lib/types";
 
 const teams = repo<ConveyorTeam>("conveyorTeams");
 
 export interface ConveyorTeamInput {
   name: string;
+  model?: ExecutionModel;
   memberUserIds: string[];
+  memberRoles?: ConveyorMemberRole[];
   playbookKey?: string;
+  icp?: IcpCriteria;
 }
 
 export const conveyorTeamService = {
@@ -29,12 +32,20 @@ export const conveyorTeamService = {
     const doc = await teams.findById(user.orgId, teamId);
     return !!doc && doc.memberUserIds.includes(user.id);
   },
+  /** Which stage(s), if any, does this user own within this system (conveyor only). */
+  async myStages(user: User, teamId: string): Promise<string[]> {
+    const doc = await teams.findById(user.orgId, teamId);
+    return doc?.memberRoles?.find((r) => r.userId === user.id)?.stageKeys ?? [];
+  },
   async create(user: User, input: ConveyorTeamInput): Promise<DTO<ConveyorTeam>> {
     assertPermission(user, "sales.assign");
     const doc = await teams.insert(user.orgId, {
       name: input.name,
+      model: input.model ?? "conveyor",
       memberUserIds: input.memberUserIds,
+      memberRoles: input.memberRoles,
       playbookKey: input.playbookKey,
+      icp: input.icp,
     });
     await audit.record({ actor: user, action: "conveyor_team.create", entity: doc._id.toHexString(), meta: { name: input.name } });
     return toDTO(doc);

@@ -37,6 +37,10 @@ export const LEAD_STAGES: LeadStage[] = [
   "lost",
 ];
 
+/** Stages a deal is still active in (not yet won/lost) — shared by every metrics/scoring
+ *  rollup so "open pipeline" means the same set of stages everywhere. */
+export const OPEN_LEAD_STAGES: LeadStage[] = ["new", "qualified", "meeting", "proposal", "negotiation"];
+
 export interface StageChange {
   from: LeadStage;
   to: LeadStage;
