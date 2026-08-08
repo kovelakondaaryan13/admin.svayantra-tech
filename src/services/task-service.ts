@@ -99,7 +99,7 @@ export const taskService = {
 
   /** Assign the same task to every employee with a given role. Returns how many. */
   async assignToRole(user: User, roleKey: string, input: CreateInput): Promise<number> {
-    const employees = await employeeService.list(user);
+    const employees = await employeeService.listDirectory(user);
     const targets = employees.filter((e) => e.roleKey === roleKey && e.status === "active");
     for (const e of targets) await this.create(user, { ...input, assigneeId: e.userId });
     return targets.length;
@@ -107,7 +107,7 @@ export const taskService = {
 
   /** Assign to every employee in an org unit (as department OR team). */
   async assignToUnit(user: User, unitId: string, input: CreateInput): Promise<number> {
-    const employees = await employeeService.list(user);
+    const employees = await employeeService.listDirectory(user);
     const targets = employees.filter(
       (e) => (e.departmentId === unitId || e.teamId === unitId) && e.status === "active",
     );

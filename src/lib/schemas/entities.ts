@@ -37,6 +37,22 @@ export const TaskUpdateSchema = TaskCreateSchema.partial().extend({
   status: z.enum(["open", "done"]).optional(),
 });
 
+/** Confirms an AI-proposed `assign_task_to_role` action (src/ai/tools.ts). */
+export const TaskAssignToRoleSchema = z.object({
+  roleKey: z.string().min(1).max(60),
+  title: z.string().min(1).max(300),
+  dueAt: z.string().datetime().optional(),
+  priority: z.enum(["low", "medium", "high"]).optional(),
+});
+
+/** Confirms an AI-proposed `bulk_reassign_leads` action (src/ai/tools.ts). */
+export const LeadBulkReassignSchema = z.object({
+  assignments: z
+    .array(z.object({ leadId: z.string().max(64), toUserId: z.string().max(64) }))
+    .min(1)
+    .max(500),
+});
+
 export const MeetingCreateSchema = z.object({
   title: z.string().min(1).max(300),
   at: z.string().datetime(),

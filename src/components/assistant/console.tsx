@@ -5,7 +5,11 @@ import { intentService, type IntentContext } from "@/services/intent-service";
 import { AiMessage } from "@/components/assistant/ai-message";
 import { fmtRelativeTime } from "@/lib/format";
 
-interface PendingApproval { type: string; leadId: string; to: string; summary: string }
+type PendingApproval =
+  | { type: "advance_lead_stage"; leadId: string; to: string; summary: string }
+  | { type: "bulk_reassign_leads"; assignments: { leadId: string; toUserId: string }[]; summary: string }
+  | { type: "assign_task"; title: string; assigneeId: string; dueAt?: string; priority?: string; leadId?: string; summary: string }
+  | { type: "assign_task_to_role"; roleKey: string; title: string; dueAt?: string; priority?: string; summary: string };
 interface Attachment { fileId: string; name: string; documentId?: string }
 interface RelatedObject { type: string; id: string; label?: string }
 interface Turn { role: "user" | "assistant"; text: string; pendingApprovals?: PendingApproval[]; attachments?: Attachment[]; working?: boolean; status?: string }
@@ -182,14 +186,23 @@ export function AssistantConsole({
   }, [initial, intent]);
 
   async function approve(a: PendingApproval) {
-    const res = await fetch(`/api/leads/${a.leadId}/advance`, {
+    const [url, body] =
+      a.type === "advance_lead_stage"
+        ? [`/api/leads/${a.leadId}/advance`, { to: a.to }]
+        : a.type === "bulk_reassign_leads"
+          ? ["/api/leads/bulk-reassign", { assignments: a.assignments }]
+          : a.type === "assign_task"
+            ? ["/api/tasks", { title: a.title, assigneeId: a.assigneeId, dueAt: a.dueAt, priority: a.priority, leadId: a.leadId }]
+            : ["/api/tasks/assign-role", { roleKey: a.roleKey, title: a.title, dueAt: a.dueAt, priority: a.priority }];
+
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: a.to }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const b = await res.json().catch(() => ({}));
-      alert(b?.error ?? "Could not advance that lead.");
+      alert(b?.error ?? "Could not complete that action.");
       return;
     }
     router.refresh();

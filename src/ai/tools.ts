@@ -28,12 +28,31 @@ export interface ToolContext {
 }
 
 /** A proposed-but-unexecuted action awaiting a human click. */
-export interface PendingApproval {
-  type: "advance_lead_stage";
-  leadId: string;
-  to: LeadStage;
-  summary: string;
-}
+export type PendingApproval =
+  | { type: "advance_lead_stage"; leadId: string; to: LeadStage; summary: string }
+  | {
+      type: "bulk_reassign_leads";
+      assignments: { leadId: string; leadName: string; toUserId: string; toName: string }[];
+      summary: string;
+    }
+  | {
+      type: "assign_task";
+      title: string;
+      assigneeId: string;
+      assigneeName: string;
+      dueAt?: string;
+      priority?: "low" | "medium" | "high";
+      leadId?: string;
+      summary: string;
+    }
+  | {
+      type: "assign_task_to_role";
+      roleKey: string;
+      title: string;
+      dueAt?: string;
+      priority?: "low" | "medium" | "high";
+      summary: string;
+    };
 
 export interface ToolRunResult {
   /** Structured, compact result returned to the model. */
@@ -287,9 +306,10 @@ const tools: Record<string, ToolDef> = {
     schema: {
       name: "assign_leads",
       description:
-        "Reassign leads evenly (round-robin) among a set of reps, by their emails. Optionally " +
-        "filter which leads by stage/source. Use for 'split qualified leads between Priya and Arjun'. " +
-        "Requires crm.write.",
+        "Propose reassigning leads evenly (round-robin) among a set of reps, by their emails. " +
+        "Optionally filter which leads by stage/source. Use for 'split qualified leads between " +
+        "Priya and Arjun'. This mutates revenue data, so it does NOT execute — it returns a " +
+        "proposal for the human to approve. Requires crm.write.",
       input_schema: {
         type: "object",
         properties: {
@@ -301,6 +321,7 @@ const tools: Record<string, ToolDef> = {
       },
     },
     async run(input, ctx) {
+      assertPermission(ctx.user, "crm.write");
       const emails = (Array.isArray(input.assigneeEmails) ? input.assigneeEmails : []).map((e) => String(e));
       if (!emails.length) return { output: { error: "no assignees provided" } };
       const employees = await employeeService.listDirectory(ctx.user);
@@ -315,13 +336,26 @@ const tools: Record<string, ToolDef> = {
           (!input.stage || l.stage === input.stage) &&
           (!input.source || l.source === String(input.source)),
       );
-      const assignments: { lead: string; to: string }[] = [];
-      for (let idx = 0; idx < targets.length; idx++) {
+      if (!targets.length) return { output: { error: "no leads matched those filters" } };
+
+      const assignments = targets.map((lead, idx) => {
         const rep = reps[idx % reps.length];
-        await leadService.reassign(ctx.user, targets[idx].id, rep.userId);
-        assignments.push({ lead: targets[idx].name, to: rep.name });
-      }
-      return { output: { reassigned: assignments.length, assignments } };
+        return { leadId: lead.id, leadName: lead.name, toUserId: rep.userId, toName: rep.name };
+      });
+      const perRep = new Map<string, number>();
+      for (const a of assignments) perRep.set(a.toName, (perRep.get(a.toName) ?? 0) + 1);
+      const summary = `Reassign ${assignments.length} lead${assignments.length === 1 ? "" : "s"} — ` +
+        [...perRep.entries()].map(([name, n]) => `${n} to ${name}`).join(", ");
+
+      // v1 boundary: never execute a revenue-data mutation from the AI directly.
+      return {
+        output: {
+          status: "pending_approval",
+          note: "This action needs the user to approve it in the UI before it happens.",
+          proposedCount: assignments.length,
+        },
+        pendingApproval: { type: "bulk_reassign_leads", assignments, summary },
+      };
     },
   },
 
@@ -445,8 +479,9 @@ const tools: Record<string, ToolDef> = {
     schema: {
       name: "assign_task",
       description:
-        "Create and assign a task to another employee by their email. Use for 'ask Priya to " +
-        "follow up with Acme'. Notifies the assignee.",
+        "Propose assigning a task to another employee by their email. Use for 'ask Priya to " +
+        "follow up with Acme'. This does NOT execute — it returns a proposal for the human to " +
+        "approve, since it creates work and notifies someone else on the assigner's behalf.",
       input_schema: {
         type: "object",
         properties: {
@@ -469,18 +504,29 @@ const tools: Record<string, ToolDef> = {
         const hits = await leadService.search(ctx.user, String(input.leadName));
         leadId = hits[0]?.id;
       }
-      const task = await taskService.create(
-        ctx.user,
-        {
-          title: String(input.title),
-          assigneeId: emp.userId,
-          dueAt: input.dueAt ? String(input.dueAt) : undefined,
-          priority: input.priority as "low" | "medium" | "high" | undefined,
-          leadId,
+      const title = String(input.title);
+      const dueAt = input.dueAt ? String(input.dueAt) : undefined;
+      const priority = input.priority as "low" | "medium" | "high" | undefined;
+
+      // v1 boundary: never execute a mutation that acts on someone else's behalf directly.
+      return {
+        output: {
+          status: "pending_approval",
+          note: "This action needs the user to approve it in the UI before it happens.",
+          assignedTo: emp.name,
+          title,
         },
-        true,
-      );
-      return { output: { id: task.id, assignedTo: emp.name, title: task.title } };
+        pendingApproval: {
+          type: "assign_task",
+          title,
+          assigneeId: emp.userId,
+          assigneeName: emp.name,
+          dueAt,
+          priority,
+          leadId,
+          summary: `Assign "${title}" to ${emp.name}`,
+        },
+      };
     },
   },
 
@@ -488,8 +534,9 @@ const tools: Record<string, ToolDef> = {
     schema: {
       name: "assign_task_to_role",
       description:
-        "Create the same task for every active employee with a given role key (e.g. sales_rep). " +
-        "Use for 'ask all sales reps to update their pipeline by Friday'.",
+        "Propose the same task for every active employee with a given role key (e.g. sales_rep). " +
+        "Use for 'ask all sales reps to update their pipeline by Friday'. This does NOT execute " +
+        "— it returns a proposal for the human to approve.",
       input_schema: {
         type: "object",
         properties: {
@@ -503,12 +550,24 @@ const tools: Record<string, ToolDef> = {
     },
     async run(input, ctx) {
       assertPermission(ctx.user, "tasks.assign");
-      const count = await taskService.assignToRole(ctx.user, String(input.roleKey), {
-        title: String(input.title),
-        dueAt: input.dueAt ? String(input.dueAt) : undefined,
-        priority: input.priority as "low" | "medium" | "high" | undefined,
-      });
-      return { output: { assignedTo: `${count} ${input.roleKey}(s)`, title: input.title } };
+      const roleKey = String(input.roleKey);
+      const employees = await employeeService.listDirectory(ctx.user);
+      const count = employees.filter((e) => e.roleKey === roleKey && e.status === "active").length;
+      if (!count) return { output: { error: `no active employees with role ${roleKey}` } };
+      const title = String(input.title);
+      const dueAt = input.dueAt ? String(input.dueAt) : undefined;
+      const priority = input.priority as "low" | "medium" | "high" | undefined;
+
+      // v1 boundary: never execute a mutation that acts on someone else's behalf directly.
+      return {
+        output: {
+          status: "pending_approval",
+          note: "This action needs the user to approve it in the UI before it happens.",
+          affectedCount: count,
+          title,
+        },
+        pendingApproval: { type: "assign_task_to_role", roleKey, title, dueAt, priority, summary: `Assign "${title}" to ${count} ${roleKey}(s)` },
+      };
     },
   },
 

@@ -39,7 +39,10 @@ When the user gives an instruction, DO NOT ask clarifying questions if you can f
 - The BUSINESS CONTEXT block contains the current user, role, permissions, pipeline snapshot, open
   tasks, team roster, approvals, meetings, and org structure. ALWAYS reference it before asking.
 - Call tools to fetch or modify data. Never guess numbers or facts.
-- Stage changes require human approval via advance_lead_stage. Everything else executes directly.
+- Actions that mutate revenue data or act on someone else's behalf require human approval and
+  return a proposal instead of executing: advance_lead_stage, assign_leads, assign_task,
+  assign_task_to_role. Tell the user what you're proposing; they click Approve in the UI.
+  Everything else (reads, and creates that only affect the caller's own work) executes directly.
 - Be concise. Lead with the answer or action taken. No filler, no preamble.
 
 ## How to handle common requests
@@ -172,13 +175,13 @@ const TOOL_LABEL: Record<string, string> = {
   list_leads: "Listing leads…",
   find_stale_leads: "Finding stale leads…",
   find_sla_breaches: "Checking SLA…",
-  assign_leads: "Assigning leads…",
+  assign_leads: "Proposing lead reassignment…",
   entity_dossier: "Building dossier…",
   search_knowledge: "Searching knowledge…",
   search_company_knowledge: "Searching documents…",
   create_task: "Creating task…",
-  assign_task: "Assigning task…",
-  assign_task_to_role: "Assigning to role…",
+  assign_task: "Proposing task assignment…",
+  assign_task_to_role: "Proposing role assignment…",
   create_meeting: "Scheduling meeting…",
   create_proposal: "Drafting proposal…",
   advance_lead_stage: "Proposing stage change…",

@@ -181,12 +181,17 @@ export const employeeService = {
    * a colleague's identity this way — unlike `list`, it doesn't require `users.read` because it
    * exposes none of the sensitive HR fields (capacity, manager, phone, etc.) that gate does.
    */
-  async listDirectory(user: User): Promise<{ userId: string; name: string; email: string; roleKey: string }[]> {
+  async listDirectory(
+    user: User,
+  ): Promise<{ userId: string; name: string; email: string; roleKey: string; status: Employee["status"]; departmentId?: string; teamId?: string }[]> {
     return (await employees.list(user.orgId)).map((e) => ({
       userId: e.userId,
       name: e.name,
       email: e.email,
       roleKey: e.roleKey,
+      status: e.status,
+      departmentId: e.departmentId,
+      teamId: e.teamId,
     }));
   },
 

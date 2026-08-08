@@ -9,6 +9,37 @@
 
 ---
 
+### ADR-044 — Default AI model: Haiku 4.5 (not Sonnet), accepted for high employee volume
+- **Date:** 2026-08-09
+- **Status:** Accepted.
+- **Context:** `src/ai/claude.ts`'s shared `MODEL` constant (used by the orchestrator/assistant,
+  daily/executive briefings, lead-import mapping, summaries, knowledge Q&A, issue triage) was
+  changed from `claude-sonnet-5` to `claude-haiku-4-5-20251001` in an earlier session, but never
+  recorded here (flagged by a code audit — see ADR discipline in CLAUDE.md). Question raised:
+  is Haiku realistic once every employee is using the assistant constantly?
+- **Decision:** Keep Haiku 4.5 as the org-wide default. At high call volume it is the only
+  financially sane choice — Sonnet's per-token cost would scale linearly with headcount and
+  usage, while Haiku 4.5 is Anthropic's tier purpose-built for agentic/tool-calling work, not
+  the older weak Haiku. Bump a specific caller back to `claude-sonnet-5` (one line in
+  `ai/claude.ts` or a per-call override) only if dogfooding shows a concrete quality gap.
+- **Consequences:** The actual risk this surfaced wasn't cost or raw quality — it's that
+  `assign_leads`, `assign_task`, and `assign_task_to_role` in `src/ai/tools.ts` execute
+  immediately with no human approval step, unlike `advance_lead_stage` (which already returns
+  a `pendingApproval` for the user to confirm). At high volume, an occasional tool-call mistake
+  on these (wrong leads matched, wrong assignee) becomes real, repeated, unreviewed data
+  mutations. **Follow-up shipped same day:** all three now return a `pendingApproval`
+  (`bulk_reassign_leads` / `assign_task` / `assign_task_to_role`) instead of executing —
+  confirmed via `POST /api/leads/bulk-reassign` (new), `POST /api/tasks` (reused —
+  `task:create` already maps to the same `tasks.assign` permission), and
+  `POST /api/tasks/assign-role` (new). `src/components/assistant/console.tsx`'s Approve
+  button now dispatches per approval type. Also found and fixed the same `users.read` gap
+  from ADR's sibling issue in `taskService.assignToRole`/`assignToUnit` (used
+  `employeeService.list`, now `listDirectory`).
+- **Alternatives considered:** Reverting to Sonnet org-wide (rejected — cost scales badly with
+  every employee using it constantly, and Haiku 4.5 is specifically built for this workload).
+
+---
+
 ### ADR-043 — UX Overhaul: Markdown rendering, Dashboard charts, Notifications, Command Palette, Organization rename
 - **Date:** 2026-07-22
 - **Status:** Accepted. Multi-pass UX improvement driven by dogfooding.
